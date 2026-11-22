@@ -10,6 +10,7 @@ object NotificationChannels {
     const val OVERDUE_ID = "timeline_overdue"
     const val GRADES_ID = "grade_updates"
     const val DDL_ID = "assignment_ddl"
+    const val FEEDBACK_ID = "feedback_replies"
 
     fun ensureCreated(context: Context) {
         val nm = ContextCompat.getSystemService(context, NotificationManager::class.java) ?: return
@@ -31,6 +32,11 @@ object NotificationChannels {
         nm.createNotificationChannel(
             NotificationChannel(DDL_ID, "作业提醒", NotificationManager.IMPORTANCE_DEFAULT).apply {
                 description = "后台查到新作业 DDL / 自动查询状态变更"
+            }
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(FEEDBACK_ID, "反馈回复", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "开发者回复了你的反馈、你反馈的问题已修复"
             }
         )
     }

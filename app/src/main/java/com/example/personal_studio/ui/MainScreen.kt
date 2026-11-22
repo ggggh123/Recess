@@ -198,6 +198,11 @@ private fun MainShell(navController: NavHostController, startDestination: String
                 },
                 onDismiss = { syncOpen = false },
             )
+            com.example.personal_studio.feature.kejian.ui.KejianPrompts(
+                enabled = isTabRoute && !plusOpen && !quickAddOpen && !syncOpen,
+                onOpenFeedback = { go(NavRoutes.SETTINGS_FEEDBACK) },
+                onOpenUpdate = { go(NavRoutes.SETTINGS_UPDATE) },
+            )
             ShellToastHost(toast, bottomPadding = if (isTabRoute) 80.dp else 24.dp)
         }
     }

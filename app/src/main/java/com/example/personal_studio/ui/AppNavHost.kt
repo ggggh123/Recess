@@ -410,6 +410,15 @@ fun AppNavHost(
                 onNeedLogin = { navController.navigate(NavRoutes.login("empty-room")) },
             )
         }
+        composable(NavRoutes.SETTINGS_UPDATE) {
+            com.example.personal_studio.feature.kejian.ui.UpdateScreen(onBack = { navController.popBackStack() })
+        }
+        composable(
+            NavRoutes.SETTINGS_FEEDBACK,
+            deepLinks = listOf(navDeepLink { uriPattern = "personalstudio://settings/feedback" }),
+        ) {
+            com.example.personal_studio.feature.kejian.ui.FeedbackScreen(onBack = { navController.popBackStack() })
+        }
         composable(
             NavRoutes.SETTINGS_DDL_POLL,
             deepLinks = listOf(navDeepLink { uriPattern = "personalstudio://settings/ddl-poll" }),

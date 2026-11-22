@@ -14,6 +14,8 @@
          API 33+; ScheduleRemindersUseCase falls back to setAndAllowWhileIdle if
          the runtime check says it isn't held. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- App 内更新：下载并核对过的新版安装包交给系统安装器。首次使用时系统会让用户确认“允许安装未知应用”。 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Required on API 30+ so Settings.ACTION_APPLICATION_DETAILS_SETTINGS and
          related intents resolve when Package Visibility restrictions apply. -->

@@ -88,4 +88,6 @@ object NavRoutes {
     const val EXAMS = "exams"
     const val EMPTY_ROOM = "empty-room"
     const val SETTINGS_DDL_POLL = "settings/ddl-poll"
+    const val SETTINGS_UPDATE = "settings/update"
+    const val SETTINGS_FEEDBACK = "settings/feedback"
 }

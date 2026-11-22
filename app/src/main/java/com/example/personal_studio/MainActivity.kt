@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var rescheduleAllUpcoming: RescheduleAllUpcomingUseCase
     @Inject lateinit var themePreferences: ThemePreferences
+    @Inject lateinit var kejian: com.example.personal_studio.feature.kejian.KejianRepository
 
     private val rootViewModel: RootViewModel by viewModels()
 
@@ -58,6 +59,12 @@ class MainActivity : ComponentActivity() {
                 MainScreen()
             }
         }
+    }
+
+    /** 每次回到前台：当天第一次签到并检查更新、补发没发出去的反馈、看看有没有新回复（都在后台，失败无声）。 */
+    override fun onStart() {
+        super.onStart()
+        kejian.onForeground()
     }
 
     /** The window shows before Compose draws; give it today's 天光 background, not a fixed white. */

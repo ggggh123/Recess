@@ -6,4 +6,6 @@
     <cache-path name="share" path="share/" />
     <!-- Scan originals + enhanced JPEGs under filesDir/scans/. -->
     <files-path name="scans" path="scans/" />
+    <!-- App 内更新下载的安装包（cacheDir/updates/），交给系统安装器 -->
+    <cache-path name="updates" path="updates/" />
 </paths>

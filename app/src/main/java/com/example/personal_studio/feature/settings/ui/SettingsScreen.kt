@@ -32,7 +32,10 @@ import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.PrivacyTip
+import androidx.compose.material.icons.outlined.QueryStats
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.rounded.Check
@@ -50,12 +53,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.personal_studio.BuildConfig
 import com.example.personal_studio.data.local.datastore.DebugMoment
+import com.example.personal_studio.data.remote.kejian.KejianApi
+import com.example.personal_studio.feature.kejian.ui.KejianSettingsViewModel
 import com.example.personal_studio.feature.settings.vm.AppearanceViewModel
 import com.example.personal_studio.feature.settings.vm.SettingsHomeViewModel
 import com.example.personal_studio.feature.timeline.ui.components.SemesterStartModal
@@ -67,6 +73,7 @@ import com.example.personal_studio.ui.components.TgChip
 import com.example.personal_studio.ui.components.TgGroupLabel
 import com.example.personal_studio.ui.components.TgRowValue
 import com.example.personal_studio.ui.components.TgSettingRow
+import com.example.personal_studio.ui.components.TgSwitch
 import com.example.personal_studio.ui.navigation.NavRoutes
 import com.example.personal_studio.ui.shell.LocalShellToast
 import com.example.personal_studio.ui.theme.Tg
@@ -84,8 +91,11 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onNavigate: (String) -> Unit,
     vm: SettingsHomeViewModel = hiltViewModel(),
+    kjVm: KejianSettingsViewModel = hiltViewModel(),
 ) {
     val st by vm.state.collectAsStateWithLifecycle()
+    val kj by kjVm.ui.collectAsStateWithLifecycle()
+    val uriHandler = LocalUriHandler.current
     val account by vm.account.collectAsStateWithLifecycle()
     val toast = LocalShellToast.current
     var pickStart by remember { mutableStateOf(false) }
@@ -176,6 +186,25 @@ fun SettingsScreen(
                 TgSettingRow(
                     "课间", icon = Icons.Outlined.Info, first = true,
                     summary = "版本 ${BuildConfig.VERSION_NAME}" + if (BuildConfig.DEBUG) " · 调试版" else "",
+                    onClick = { onNavigate(NavRoutes.SETTINGS_UPDATE) },
+                    trailing = { TgRowValue(kj.newerVersion?.let { "新版本 $it" } ?: "检查更新", accent = kj.newerVersion != null) },
+                )
+                TgSettingRow(
+                    "问题反馈", icon = Icons.Outlined.ChatBubbleOutline,
+                    summary = "遇到问题、想要的功能，直接告诉开发者",
+                    onClick = { onNavigate(NavRoutes.SETTINGS_FEEDBACK) },
+                    trailing = { TgRowValue(if (kj.unseenReplies > 0) "${kj.unseenReplies} 条新回复" else "", accent = kj.unseenReplies > 0) },
+                )
+                TgSettingRow(
+                    "匿名使用统计", icon = Icons.Outlined.QueryStats,
+                    summary = "每天一次：随机 ID、版本、机型和 Android 版本，用来了解有多少同学在用。不含学号和任何学校数据",
+                    onClick = { kjVm.setStats(!kj.statsEnabled) },
+                    trailing = { TgSwitch(kj.statsEnabled, onCheckedChange = { kjVm.setStats(it) }) },
+                )
+                TgSettingRow(
+                    "隐私说明", icon = Icons.Outlined.PrivacyTip,
+                    summary = "课间会把什么发给谁，写在官网上",
+                    onClick = { runCatching { uriHandler.openUri(KejianApi.PRIVACY_URL) } },
                 )
             }
         }

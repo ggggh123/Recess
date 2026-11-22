@@ -22,6 +22,7 @@ class KejianApp : Application(), Configuration.Provider {
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var gradesPollScheduler: GradesPollScheduler
     @Inject lateinit var ddlPollScheduler: DdlPollScheduler
+    @Inject lateinit var kejian: com.example.personal_studio.feature.kejian.KejianRepository
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -48,6 +49,13 @@ class KejianApp : Application(), Configuration.Provider {
             runCatching {
                 gradesPollScheduler.rescheduleFromPrefs()
                 ddlPollScheduler.rescheduleFromPrefs()
+            }
+        }
+
+        // 还有等回复的反馈：把定时查询排上（被力停清掉的话这里补回来）
+        appScope.launch {
+            runCatching {
+                if (kejian.hasOpenFeedback()) com.example.personal_studio.feature.kejian.FeedbackScheduler.ensureReplyPolling(this@KejianApp)
             }
         }
     }
