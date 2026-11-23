@@ -109,6 +109,16 @@ class SyncAssignmentsUseCaseTest {
         assertFalse(DdlSyncStep.Failed(DdlSyncError.WrongCredentials).unreachable())
     }
 
+    @Test fun `only unreachable and a busy school count as temporary`() {
+        assertTrue(BackgroundDdlResult.Transient.temporary)
+        assertTrue(BackgroundDdlResult.Stop(DdlSyncError.School(SchoolProblem.SERVER_BUSY)).temporary)
+        assertFalse(BackgroundDdlResult.Stop(DdlSyncError.School(SchoolProblem.WEBVPN_SIGN_IN)).temporary)
+        assertFalse(BackgroundDdlResult.Stop(DdlSyncError.CaptchaRequired).temporary)
+        assertFalse(BackgroundDdlResult.Ok(emptyList()).temporary)
+        // A busy 乐学 is not "unreachable": switching routes would not help.
+        assertFalse(DdlSyncOutcome(mapOf(DdlSource.LEXUE to BackgroundDdlResult.Stop(DdlSyncError.School(SchoolProblem.SERVER_BUSY)))).lexueUnreachable)
+    }
+
     @Test fun `merging two routes keeps answers over connection failures`() {
         val first = DdlSyncOutcome(mapOf(DdlSource.LEXUE to BackgroundDdlResult.Transient, DdlSource.ECLASS to BackgroundDdlResult.Ok(listOf(homework))))
         val second = DdlSyncOutcome(mapOf(DdlSource.LEXUE to BackgroundDdlResult.Ok(emptyList()), DdlSource.ECLASS to BackgroundDdlResult.Transient))

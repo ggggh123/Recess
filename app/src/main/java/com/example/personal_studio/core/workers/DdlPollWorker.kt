@@ -89,8 +89,10 @@ class DdlPollWorker @AssistedInject constructor(
             return Result.success()
         }
         if (outcome.succeeded.isEmpty()) {
-            if (outcome.bySource.values.all { it is BackgroundDdlResult.Transient }) {
-                pollPrefs.setLastResult(PollResult(now, false, 0, 0, "网络不可达,稍后自动重试"))
+            if (outcome.bySource.values.all { it.temporary }) {
+                // Unreachable or a busy school passes by itself: back off and retry, keep polling.
+                val busy = outcome.bySource.values.any { it != BackgroundDdlResult.Transient }
+                pollPrefs.setLastResult(PollResult(now, false, 0, 0, if (busy) "学校系统繁忙,稍后自动重试" else "网络不可达,稍后自动重试"))
                 return Result.retry()
             }
             when (val reason = outcome.primaryError) {

@@ -62,8 +62,10 @@ class SchoolPageGuard internal constructor(private val urls: BitAuthUrls) : Inte
         }
     }
 
-    /** 教学中心 (jwapp) and 正方教务 (jsxsd), directly or through WebVPN. */
-    private fun isAcademic(url: HttpUrl): Boolean = "/jwapp/" in url.encodedPath || "/jsxsd/" in url.encodedPath
+    /** 教学中心 (jwapp), 正方教务 (jsxsd) and 乐学, directly or through WebVPN. 新乐学 handles
+     * its own answers (a sign-in page there just means "sign in first"). */
+    private fun isAcademic(url: HttpUrl): Boolean = "/jwapp/" in url.encodedPath || "/jsxsd/" in url.encodedPath ||
+        urls.unroute(url).host == LEXUE_HOST
 
     /** jwapp's module calls answer JSON; its index.do pages are HTML. */
     private fun expectsJson(request: Request): Boolean =
@@ -71,5 +73,6 @@ class SchoolPageGuard internal constructor(private val urls: BitAuthUrls) : Inte
 
     private companion object {
         const val PEEK = 4_096L
+        const val LEXUE_HOST = "lexue.bit.edu.cn"
     }
 }

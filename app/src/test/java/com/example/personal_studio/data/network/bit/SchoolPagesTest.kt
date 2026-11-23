@@ -58,6 +58,17 @@ class SchoolPagesTest {
         )
     }
 
+    @Test fun `乐学 server errors and sign-in pages are recognised too, 新乐学 is left to its own checks`() {
+        assertEquals(SchoolProblem.SERVER_BUSY, problem("https://lexue.bit.edu.cn/", code = 503))
+        assertEquals(SchoolProblem.SERVER_BUSY, problem(BitUrlsConfig.WEBVPN.lexue + "calendar/export.php", code = 502))
+        assertEquals(
+            SchoolProblem.SESSION_EXPIRED,
+            problem("https://lexue.bit.edu.cn/", "https://sso.bit.edu.cn/cas/login?service=x"),
+        )
+        assertNull(problem("https://lexue.bit.edu.cn/calendar/export_execute.php", head = "BEGIN:VCALENDAR"))
+        assertNull(problem("https://zy-eclass.bit.edu.cn/api/my-semesters", code = 502))
+    }
+
     @Test fun `HTML where jwapp answers JSON is an unexpected page`() {
         assertEquals(
             SchoolProblem.UNEXPECTED_PAGE,

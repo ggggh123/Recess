@@ -68,6 +68,15 @@ sealed interface BackgroundDdlResult {
     data class Ok(val events: List<DdlEvent>) : BackgroundDdlResult
     data class Stop(val reason: DdlSyncError) : BackgroundDdlResult
     object Transient : BackgroundDdlResult
+
+    /**
+     * Likely to pass by itself, so background polling retries later instead of stopping:
+     * unreachable, or the school busy. A busy school stays a [Stop] so a manual refresh can still
+     * say so, and so it does not count as "乐学 unreachable" (another route would not help).
+     */
+    val temporary: Boolean
+        get() = this == Transient ||
+            (this is Stop && reason == DdlSyncError.School(com.example.personal_studio.data.network.bit.SchoolProblem.SERVER_BUSY))
 }
 
 /**

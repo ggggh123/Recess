@@ -135,10 +135,10 @@ WebVPN 把目标 host 加密后编进路径：`https://webvpn.bit.edu.cn/<scheme
 | 情况 | 范围 | 结果 |
 | --- | --- | --- |
 | 最终落在网关的 `/fingerprint` 或 `/login` | 任何业务请求（含乐学订阅） | `WEBVPN_SIGN_IN`：校外访问需要先验证 |
-| 5xx | 教学中心（路径含 `/jwapp/`）和教务（含 `/jsxsd/`） | `SERVER_BUSY`：学校系统繁忙或正在维护 |
+| 5xx | 教学中心（路径含 `/jwapp/`）、教务（含 `/jsxsd/`）和乐学（直连或经网关） | `SERVER_BUSY`：学校系统繁忙或正在维护 |
 | 最终落在 CAS 登录页（直连或经网关） | 同上 | `SESSION_EXPIRED`：登录已过期 |
 | 应返回 JSON 的教学中心接口返回了 HTML | jwapp 中除 `index.do` 外的接口 | 是登录页 → `SESSION_EXPIRED`；是繁忙／网关错误页 → `SERVER_BUSY`；其他 → `UNEXPECTED_PAGE` |
-| 其他 | — | 放行，交给各功能自己的检查（如成绩的评教、成绩表） |
+| 其他 | — | 放行，交给各功能自己的检查（如成绩的评教、成绩表）。新乐学不在检查范围内：它被带到登录页只表示需要先认证，由自己的流程处理；它的非 2xx 按连接级失败处理 |
 
 命中时抛出 `SchoolPageException`。它只因为 OkHttp 拦截器只能抛 `IOException` 才继承 `IOException`；各用例在网络错误分支**之前**捕获它，转为各自错误类型的 `School(problem)`（`ImportError`、`ExamSyncError`、`GradesSyncError`、`DdlSyncError`），所以**不会触发换线路**，也不会被报成“连不上”。
 
@@ -196,7 +196,7 @@ WebVPN 把目标 host 加密后编进路径：`https://webvpn.bit.edu.cn/<scheme
 [`SyncAssignmentsUseCase`](../app/src/main/java/com/example/personal_studio/domain/bitddl/SyncAssignmentsUseCase.kt) 读取乐学的步骤：
 
 1. 用保存的地址直接读，读取时用 `BitApiClient.routed()` 按当前线路改写（校外为网关地址）。是 VCALENDAR 就解析。
-2. 读到的不是日历，或网关未登录（`WEBVPN_SIGN_IN`，按“不是日历”处理）时，用 [`GenerateLexueIcalUrlUseCase`](../app/src/main/java/com/example/personal_studio/domain/bitddl/GenerateLexueIcalUrlUseCase.kt) 重新派生：`loginLexue`（校外先登录网关）→ 乐学首页取 `sesskey` → 提交日历导出表单 → 从页面取出订阅地址。经网关时页面上的地址可能是网关地址或只有路径：路径按导出页地址补全，网关地址用 `BitAuthUrls.unroute` 还原成乐学原址后再保存。
+2. 读到的不是日历，或被页面检查拦下（网关未登录、登录过期、繁忙，都按“不是日历”处理）时，用 [`GenerateLexueIcalUrlUseCase`](../app/src/main/java/com/example/personal_studio/domain/bitddl/GenerateLexueIcalUrlUseCase.kt) 重新派生：`loginLexue`（校外先登录网关）→ 乐学首页取 `sesskey` → 提交日历导出表单 → 从页面取出订阅地址。经网关时页面上的地址可能是网关地址或只有路径：路径按导出页地址补全，网关地址用 `BitAuthUrls.unroute` 还原成乐学原址后再保存。
 3. 用新地址再读一次，仍不是日历才报错。无需每次读取都重新认证。
 
 [`LexueIcalParser`](../app/src/main/java/com/example/personal_studio/domain/bitddl/LexueIcalParser.kt) 处理折行、TEXT 转义、UTC 时间及本地／全天日期，取 UID、标题、描述、课程和 `DTSTART`；非 UTC 日期按 `+08:00`。这是面向乐学 feed 的有限解析器，不支持所有 RFC 5545 规则或任意时区。单条缺 UID／日期会跳过，合法日历但条目解析失败仍可能得到空列表，这与真实空订阅目前并未完整区分。
@@ -256,9 +256,9 @@ DDL 是日历元数据；“完成”仅在本地记录，没有查询 Moodle �
 实现入口：[GradePollWorker](../app/src/main/java/com/example/personal_studio/core/workers/GradePollWorker.kt)、[DdlPollWorker](../app/src/main/java/com/example/personal_studio/core/workers/DdlPollWorker.kt)。
 
 - 无凭据时停轮；密码错误／锁定会清凭据并停止该轮询。
-- 需要验证、`School(problem)`（成绩的 `SERVER_BUSY` 除外）或解析失败会停轮并通知。
+- 需要验证、`School(problem)`（`SERVER_BUSY` 除外）或解析失败会停轮并通知。
 - 未评教只记录状态，保持启用。
-- 连接级失败和成绩的 `SERVER_BUSY` 交给 WorkManager 指数退避，避免连续认证请求。
+- 连接级失败和学校繁忙（`SERVER_BUSY`）交给 WorkManager 指数退避，保持启用，避免连续认证请求。作业判断用 `BackgroundDdlResult.temporary`：繁忙在结果里仍是 `Stop(School(SERVER_BUSY))`，所以手动刷新能显示“学校系统繁忙”，也不会被当成“乐学连不上”去换线路。
 
 ## 诊断日志
 
@@ -279,7 +279,6 @@ DDL 是日历元数据；“完成”仅在本地记录，没有查询 Moodle �
 
 - 每个业务入口仍会重新走目标服务认证链；可复用 CAS 的 TGC，但没有独立的“服务会话仍有效就直接执行业务”入口。
 - 统一认证偶尔在会话中途长时间不响应（2026-11 见过一次提交密码时等满 30 秒），只能靠超时和换线路兜底；换线路对它无效，因为两条线路都要直连 CAS。
-- 作业后台轮询遇到 `SERVER_BUSY` 仍会停轮并通知，成绩轮询则按临时失败重试，两者尚未统一。
 - 依赖学校页面细节：CAS 表单标记和错误码、WebVPN 的 `/fingerprint` → `/set-fingerprint` 流程、jwms 对 GET 返回 2xx、教学中心接口返回 JSON。学校改版后会再失效，但失败会带具体原因，`BitTrace` 可定位到具体一跳。
 - 新乐学的登录链只在浏览器里实际走通过（含 `/cas//login` 和 broker 回调）；App 内的原生认证链由本地模拟服务器测试覆盖。从未登录过新乐学的账号可能遇到 Keycloak 的首次登录页，目前会报“登录后仍未进入”。
 - 乐学 token、业务缓存与已下载数据没有完整账号隔离；有效空结果与解析丢失的保护在不同功能之间也不一致。

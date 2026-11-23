@@ -10,6 +10,7 @@ import com.example.personal_studio.data.local.datastore.ImportCredentialPrefs
 import com.example.personal_studio.data.local.datastore.SavedCredentials
 import com.example.personal_studio.data.network.bit.BitApiClient
 import com.example.personal_studio.data.network.bit.NetworkMode
+import com.example.personal_studio.data.network.bit.SchoolProblem
 import com.example.personal_studio.domain.bitddl.DdlDiffResult
 import com.example.personal_studio.domain.bitddl.DetectNewDdlUseCase
 import com.example.personal_studio.domain.bitddl.ReplaceImportedDdlUseCase
@@ -218,6 +219,41 @@ class DdlPollWorkerTest {
         coVerify(exactly = 0) { scheduler.cancel() }
         assertTrue(result.single().ok)
         assertEquals("新乐学未同步：学校要求验证", result.single().message)
+    }
+
+    @Test fun `a busy school is retried later instead of stopping polling`() = runTest {
+        val pollPrefs = mockk<DdlSyncPrefs>(relaxed = true) { coEvery { snapshot() } returns enabled() }
+        val credPrefs = mockk<ImportCredentialPrefs>(relaxed = true) { every { observeAll() } returns MutableStateFlow(creds()) }
+        val sync = mockk<SyncAssignmentsUseCase> {
+            coEvery { syncForBackground(any()) } returns
+                outcome(BackgroundDdlResult.Stop(DdlSyncError.School(SchoolProblem.SERVER_BUSY)), BackgroundDdlResult.Transient)
+        }
+        val notifier = mockk<DdlNotifier>(relaxed = true)
+        val scheduler = mockk<DdlPollScheduler>(relaxed = true)
+        val result = mutableListOf<com.example.personal_studio.data.local.datastore.PollResult>()
+        coEvery { pollPrefs.setLastResult(capture(result)) } returns mockk(relaxed = true)
+        val r = worker(pollPrefs, credPrefs, sync, notifier = notifier, scheduler = scheduler).doWork()
+        assertEquals(ListenableWorker.Result.retry(), r)
+        coVerify(exactly = 0) { pollPrefs.setEnabled(false) }
+        coVerify(exactly = 0) { scheduler.cancel() }
+        coVerify(exactly = 0) { notifier.notifyStop(any(), any()) }
+        assertEquals("学校系统繁忙,稍后自动重试", result.single().message)
+        // Another route would not help a busy school.
+        coVerify(exactly = 1) { sync.syncForBackground(any()) }
+    }
+
+    @Test fun `other school problems still stop polling and ask the person`() = runTest {
+        val pollPrefs = mockk<DdlSyncPrefs>(relaxed = true) { coEvery { snapshot() } returns enabled() }
+        val credPrefs = mockk<ImportCredentialPrefs>(relaxed = true) { every { observeAll() } returns MutableStateFlow(creds()) }
+        val reason = DdlSyncError.School(SchoolProblem.WEBVPN_SIGN_IN)
+        val sync = mockk<SyncAssignmentsUseCase> {
+            coEvery { syncForBackground(any()) } returns outcome(BackgroundDdlResult.Stop(reason), BackgroundDdlResult.Transient)
+        }
+        val notifier = mockk<DdlNotifier>(relaxed = true)
+        val r = worker(pollPrefs, credPrefs, sync, notifier = notifier).doWork()
+        assertEquals(ListenableWorker.Result.success(), r)
+        coVerify { pollPrefs.setEnabled(false) }
+        coVerify { notifier.notifyStop(any(), reason) }
     }
 
     @Test fun `a wrong password found by 新乐学 still stops polling`() = runTest {
