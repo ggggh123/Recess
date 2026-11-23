@@ -89,4 +89,12 @@ class FakeChatRepository : ChatRepository {
         }.sortedByDescending { it.updatedAt }
         return id
     }
+
+    override suspend fun deleteMessagesFrom(sessionId: Long, messageId: Long, inclusive: Boolean): Int {
+        val existing = messagesBySession.value[sessionId].orEmpty()
+        val drop = com.example.personal_studio.domain.chat.messagesToDiscard(existing, messageId, inclusive).toSet()
+        if (drop.isEmpty()) return 0
+        messagesBySession.value = messagesBySession.value + (sessionId to existing.filterNot { it.id in drop })
+        return drop.size
+    }
 }

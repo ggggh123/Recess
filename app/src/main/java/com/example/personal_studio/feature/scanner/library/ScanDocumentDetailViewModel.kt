@@ -94,9 +94,9 @@ class ScanDocumentDetailViewModel @AssistedInject constructor(
     }
 
     /** 拍照→warp+滤镜→append 一页(复用构建器同款流程)。新建文档在这里才真正写库。 */
-    fun confirmPage(tmpCapture: File, corners: List<PointF>, filter: ScanFilter) = viewModelScope.launch {
+    fun confirmPage(tmpCapture: File, corners: List<PointF>, filter: ScanFilter, rotationQuarters: Int = 0) = viewModelScope.launch {
         val docId = ensureDocument()
-        val result = captureAndEnhance(repo.documentDir(docId), tmpCapture, corners, filter)
+        val result = captureAndEnhance(repo.documentDir(docId), tmpCapture, corners, filter, rotationQuarters)
         addPage(docId, result.originalImagePath, result.enhancedImagePath, result.filter, result.cornersJson)
     }
 

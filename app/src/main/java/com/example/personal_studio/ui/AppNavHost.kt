@@ -307,7 +307,7 @@ fun AppNavHost(
             EnhanceReviewScreen(
                 capturedFilePath = tmp,
                 cornersBitmapPx = corners,
-                onConfirm = { _, _ -> navController.popBackStack() },
+                onConfirm = { _, _, _ -> navController.popBackStack() },
                 onCancel = { navController.popBackStack() },
             )
         }

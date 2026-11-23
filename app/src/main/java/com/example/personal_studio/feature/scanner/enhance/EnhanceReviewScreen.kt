@@ -44,14 +44,17 @@ fun EnhanceReviewScreen(
     capturedFilePath: String,
     cornersBitmapPx: List<PointF>,
     showSaveToLibCheckbox: Boolean = false,
-    onConfirm: (filter: ScanFilter, saveToLib: Boolean) -> Unit,
+    /** The chosen filter, clockwise quarter turns, and the "also save to scans" switch. */
+    onConfirm: (filter: ScanFilter, rotationQuarters: Int, saveToLib: Boolean) -> Unit,
     onCancel: () -> Unit,
 ) = DarkCanvas {
 
     // Same reasoning as EdgeDetectAndCropScreen: key by the tmp path so nested
     // use inside DocumentBuilder doesn't reuse VMs across captures.
+    // Keyed by photo and corners: back to the corner step and forward again with the same
+    // corners keeps the chosen filter and rotation; new corners get a fresh warp.
     val vm: EnhanceReviewViewModel = hiltViewModel(
-        key = capturedFilePath,
+        key = "enhance:$capturedFilePath:" + cornersBitmapPx.joinToString(";") { "${it.x},${it.y}" },
         creationCallback = { f: EnhanceReviewViewModel.Factory -> f.create(capturedFilePath, cornersBitmapPx) }
     )
     val state by vm.state.collectAsStateWithLifecycle()
@@ -101,7 +104,7 @@ fun EnhanceReviewScreen(
             secondary = "重拍",
             onSecondary = onCancel,
             primary = if (state.isLoading) "处理中…" else "完成",
-            onPrimary = { onConfirm(state.currentFilter, saveToLib) },
+            onPrimary = { onConfirm(state.currentFilter, state.rotationQuarters, saveToLib) },
             primaryEnabled = !state.isLoading,
             above = {
                 ScanFilter.entries.forEach { f ->

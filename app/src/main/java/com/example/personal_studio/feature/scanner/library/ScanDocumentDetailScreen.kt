@@ -170,29 +170,35 @@ fun ScanDocumentDetailScreen(
             onRename = vm::rename,
             onBack = exit,
         )
-        is EditorStep.Capturing -> CameraCaptureScreen(
-            outputDir = tmpDir,
-            onCaptured = { file, auto, liveNorm ->
-                step = EditorStep.EdgeDetect(file.absolutePath, auto, liveNorm)
-            },
-            onCancel = { if (isNew && state.pages.isEmpty()) exit() else step = EditorStep.Viewing },
-        )
-        is EditorStep.EdgeDetect -> EdgeDetectAndCropScreen(
-            capturedFilePath = s.tmp,
-            autoDetect = s.autoDetect,
-            preDetectedNormalized = s.liveNorm,
-            onConfirm = { corners -> step = EditorStep.Enhance(s.tmp, corners) },
-            onRetake = { step = EditorStep.Capturing(s.tmp.hashCode()) },
-        )
-        is EditorStep.Enhance -> EnhanceReviewScreen(
-            capturedFilePath = s.tmp,
-            cornersBitmapPx = s.corners,
-            onConfirm = { filter, _ ->
-                vm.confirmPage(File(s.tmp), s.corners, filter)
-                step = EditorStep.Viewing
-            },
-            onCancel = { step = EditorStep.Capturing(s.tmp.hashCode()) },
-        )
+        // The capture steps' view models (full-size bitmaps) live only while capturing.
+        else -> com.example.personal_studio.ui.components.ScopedViewModelStore {
+            when (s) {
+                is EditorStep.Capturing -> CameraCaptureScreen(
+                    outputDir = tmpDir,
+                    onCaptured = { file, auto, liveNorm ->
+                        step = EditorStep.EdgeDetect(file.absolutePath, auto, liveNorm)
+                    },
+                    onCancel = { if (isNew && state.pages.isEmpty()) exit() else step = EditorStep.Viewing },
+                )
+                is EditorStep.EdgeDetect -> EdgeDetectAndCropScreen(
+                    capturedFilePath = s.tmp,
+                    autoDetect = s.autoDetect,
+                    preDetectedNormalized = s.liveNorm,
+                    onConfirm = { corners -> step = EditorStep.Enhance(s.tmp, corners) },
+                    onRetake = { step = EditorStep.Capturing(s.tmp.hashCode()) },
+                )
+                is EditorStep.Enhance -> EnhanceReviewScreen(
+                    capturedFilePath = s.tmp,
+                    cornersBitmapPx = s.corners,
+                    onConfirm = { filter, quarters, _ ->
+                        vm.confirmPage(File(s.tmp), s.corners, filter, quarters)
+                        step = EditorStep.Viewing
+                    },
+                    onCancel = { step = EditorStep.Capturing(s.tmp.hashCode()) },
+                )
+                EditorStep.Viewing -> Unit
+            }
+        }
     }
 
     deletePageTarget?.let { pid ->

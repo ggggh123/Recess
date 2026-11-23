@@ -115,29 +115,35 @@ fun PageEditScreen(
                 saveVm.startDraft(src)
             },
         )
-        is EditStep.Capturing -> CameraCaptureScreen(
-            outputDir = tmpDir,
-            onCaptured = { file, auto, liveNorm ->
-                step = EditStep.EdgeDetect(file.absolutePath, auto, liveNorm)
-            },
-            onCancel = { step = EditStep.Review },
-        )
-        is EditStep.EdgeDetect -> EdgeDetectAndCropScreen(
-            capturedFilePath = s.tmp,
-            autoDetect = s.autoDetect,
-            preDetectedNormalized = s.liveNorm,
-            onConfirm = { corners -> step = EditStep.Enhance(s.tmp, corners) },
-            onRetake = { step = EditStep.Capturing(System.identityHashCode(step)) },
-        )
-        is EditStep.Enhance -> EnhanceReviewScreen(
-            capturedFilePath = s.tmp,
-            cornersBitmapPx = s.corners,
-            onConfirm = { filter, _ ->
-                vm.recapture(File(s.tmp), s.corners, filter)
-                onBack()
-            },
-            onCancel = { step = EditStep.Capturing(System.identityHashCode(step)) },
-        )
+        // The capture steps' view models (full-size bitmaps) live only while capturing.
+        else -> com.example.personal_studio.ui.components.ScopedViewModelStore {
+            when (s) {
+                is EditStep.Capturing -> CameraCaptureScreen(
+                    outputDir = tmpDir,
+                    onCaptured = { file, auto, liveNorm ->
+                        step = EditStep.EdgeDetect(file.absolutePath, auto, liveNorm)
+                    },
+                    onCancel = { step = EditStep.Review },
+                )
+                is EditStep.EdgeDetect -> EdgeDetectAndCropScreen(
+                    capturedFilePath = s.tmp,
+                    autoDetect = s.autoDetect,
+                    preDetectedNormalized = s.liveNorm,
+                    onConfirm = { corners -> step = EditStep.Enhance(s.tmp, corners) },
+                    onRetake = { step = EditStep.Capturing(System.identityHashCode(step)) },
+                )
+                is EditStep.Enhance -> EnhanceReviewScreen(
+                    capturedFilePath = s.tmp,
+                    cornersBitmapPx = s.corners,
+                    onConfirm = { filter, quarters, _ ->
+                        vm.recapture(File(s.tmp), s.corners, filter, quarters)
+                        onBack()
+                    },
+                    onCancel = { step = EditStep.Capturing(System.identityHashCode(step)) },
+                )
+                EditStep.Review -> Unit
+            }
+        }
     }
 
     SavePreviewModal(

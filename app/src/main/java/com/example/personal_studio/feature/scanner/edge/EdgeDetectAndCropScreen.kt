@@ -58,8 +58,10 @@ fun EdgeDetectAndCropScreen(
     // DocumentBuilder state machine (same nav entry, multiple rounds of
     // capture→edge→enhance), where the default class-only key would leak
     // the first round's bitmap into later rounds.
+    // Own key prefix: the enhance step keys by the same photo, and in one store a second view
+    // model under the same key replaces the first (going back would lose adjusted corners).
     val vm: EdgeDetectViewModel = hiltViewModel(
-        key = capturedFilePath,
+        key = "edge:$capturedFilePath",
         creationCallback = { f: EdgeDetectViewModel.Factory ->
             f.create(capturedFilePath, autoDetect, preDetectedNormalized)
         }

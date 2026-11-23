@@ -7,6 +7,7 @@ import com.example.personal_studio.data.remote.llm.LlmRole
 import com.example.personal_studio.data.repository.ChatRepository
 import com.example.personal_studio.domain.model.MessageRole
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import java.io.File
 import javax.inject.Inject
@@ -36,7 +37,15 @@ class SendMessageUseCase @Inject constructor(
             attachedImagePaths = userImagePaths,
         )
         emit(SendChunk.UserPersisted(userId))
+        emitAll(reply(sessionId, systemPrompt))
+    }
 
+    /**
+     * Answers the conversation as it stands, without adding a user message: 回溯 asks the last
+     * user message again after the turns that followed it were dropped. Emits [SendChunk.Delta]s
+     * then [SendChunk.AiPersisted], or [SendChunk.Error].
+     */
+    fun reply(sessionId: Long, systemPrompt: String? = SYSTEM_PROMPT): Flow<SendChunk> = flow {
         // 2. Build the full conversation history for the LLM.
         //    We include text of every prior turn and reload image bytes from disk for
         //    any message (including the one we just appended) that has an attached image.

@@ -25,6 +25,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.InputTransformation
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.maxLength
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Sync
@@ -44,6 +47,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -136,6 +141,11 @@ fun TgChip(
 /**
  * A rounded text field: page-coloured fill, hairline border that turns accent while focused
  * and error-coloured when [error] is set. [label] sits above, [error] or [hint] below.
+ *
+ * Plain text fields (default or text keyboard, no [visualTransformation]) edit through a
+ * `TextFieldState` (see [rememberTextFieldState]), so IMEs that type paired quotes “” work.
+ * Passwords, numbers, codes and addresses keep the classic field: they never take such input,
+ * and the password mask relies on [visualTransformation]. [maxLength] caps the text in both.
  */
 @Composable
 fun TgTextField(
@@ -152,7 +162,77 @@ fun TgTextField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     visualTransformation: VisualTransformation = VisualTransformation.None,
+    maxLength: Int? = null,
     trailing: (@Composable () -> Unit)? = null,
+) {
+    val plainText = visualTransformation == VisualTransformation.None &&
+        (keyboardOptions.keyboardType == KeyboardType.Text || keyboardOptions.keyboardType == KeyboardType.Unspecified)
+    if (plainText) {
+        TgTextFieldFrame(modifier, label, hint, error, singleLine, trailing) { interaction, textModifier ->
+            val state = rememberTextFieldState(value, onValueChange)
+            val c = Tg.colors
+            BasicTextField(
+                state = state,
+                enabled = enabled,
+                inputTransformation = maxLength?.let { InputTransformation.maxLength(it) },
+                lineLimits = if (singleLine) TextFieldLineLimits.SingleLine else TextFieldLineLimits.MultiLine(minHeightInLines = minLines),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = if (enabled) c.text else c.textSecondary),
+                cursorBrush = SolidColor(c.accent),
+                keyboardOptions = keyboardOptions,
+                // A single-line field's default IME action is Done, as in the classic field.
+                onKeyboardAction = keyboardActions.toHandler(
+                    if (keyboardOptions.imeAction == ImeAction.Default && singleLine) ImeAction.Done else keyboardOptions.imeAction,
+                ),
+                interactionSource = interaction,
+                modifier = textModifier,
+                decorator = { inner ->
+                    TgTextFieldPlaceholder(state.text.isEmpty(), placeholder, singleLine, inner)
+                },
+            )
+        }
+        return
+    }
+    TgTextFieldFrame(modifier, label, hint, error, singleLine, trailing) { interaction, textModifier ->
+        val c = Tg.colors
+        BasicTextField(
+            value = value,
+            onValueChange = { if (maxLength == null || it.length <= maxLength) onValueChange(it) },
+            enabled = enabled,
+            singleLine = singleLine,
+            minLines = minLines,
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = if (enabled) c.text else c.textSecondary),
+            cursorBrush = SolidColor(c.accent),
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
+            visualTransformation = visualTransformation,
+            interactionSource = interaction,
+            modifier = textModifier,
+            decorationBox = { inner -> TgTextFieldPlaceholder(value.isEmpty(), placeholder, singleLine, inner) },
+        )
+    }
+}
+
+@Composable
+private fun TgTextFieldPlaceholder(empty: Boolean, placeholder: String?, singleLine: Boolean, inner: @Composable () -> Unit) {
+    val c = Tg.colors
+    Box(contentAlignment = if (singleLine) Alignment.CenterStart else Alignment.TopStart) {
+        if (empty && placeholder != null) {
+            Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = c.textSecondary.copy(alpha = 0.7f), maxLines = if (singleLine) 1 else Int.MAX_VALUE)
+        }
+        inner()
+    }
+}
+
+/** Label, bordered row (focus / error colours), trailing slot and the note below, around [field]. */
+@Composable
+private fun TgTextFieldFrame(
+    modifier: Modifier,
+    label: String?,
+    hint: String?,
+    error: String?,
+    singleLine: Boolean,
+    trailing: (@Composable () -> Unit)?,
+    field: @Composable androidx.compose.foundation.layout.RowScope.(MutableInteractionSource, Modifier) -> Unit,
 ) {
     val c = Tg.colors
     val interaction = remember { MutableInteractionSource() }
@@ -181,28 +261,7 @@ fun TgTextField(
                 .padding(start = 14.dp, end = if (trailing != null) 4.dp else 14.dp),
             verticalAlignment = if (singleLine) Alignment.CenterVertically else Alignment.Top,
         ) {
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                enabled = enabled,
-                singleLine = singleLine,
-                minLines = minLines,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = if (enabled) c.text else c.textSecondary),
-                cursorBrush = SolidColor(c.accent),
-                keyboardOptions = keyboardOptions,
-                keyboardActions = keyboardActions,
-                visualTransformation = visualTransformation,
-                interactionSource = interaction,
-                modifier = Modifier.weight(1f).padding(vertical = 13.dp),
-                decorationBox = { inner ->
-                    Box(contentAlignment = if (singleLine) Alignment.CenterStart else Alignment.TopStart) {
-                        if (value.isEmpty() && placeholder != null) {
-                            Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = c.textSecondary.copy(alpha = 0.7f), maxLines = if (singleLine) 1 else Int.MAX_VALUE)
-                        }
-                        inner()
-                    }
-                },
-            )
+            field(interaction, Modifier.weight(1f).padding(vertical = 13.dp))
             if (trailing != null) Box(Modifier.align(Alignment.CenterVertically)) { trailing() }
         }
         val note = error ?: hint

@@ -53,6 +53,7 @@ class QuickCaptureForChatViewModel @Inject constructor(
         tmpFile: File,
         corners: List<PointF>,
         filter: ScanFilter,
+        rotationQuarters: Int,
         saveToLib: Boolean,
     ) = viewModelScope.launch {
         val (dir, isScratch) = if (saveToLib) {
@@ -64,7 +65,7 @@ class QuickCaptureForChatViewModel @Inject constructor(
                 "scans/tmp-chat/${UUID.randomUUID().toString().take(8)}",
             ) to true
         }
-        val result = captureAndEnhance(dir, tmpFile, corners, filter)
+        val result = captureAndEnhance(dir, tmpFile, corners, filter, rotationQuarters)
 
         if (saveToLib) {
             // dir here is repo.documentDir(docId) — back-derive the docId

@@ -134,9 +134,10 @@ class PageEditViewModel @AssistedInject constructor(
         tmpFile: File,
         corners: List<PointF>,
         filter: ScanFilter,
+        rotationQuarters: Int = 0,
     ) = viewModelScope.launch {
         val page = _state.value.page ?: return@launch
-        val result = captureAndEnhance(repo.documentDir(page.docId), tmpFile, corners, filter)
+        val result = captureAndEnhance(repo.documentDir(page.docId), tmpFile, corners, filter, rotationQuarters)
         recapturePageUc(
             page.id,
             result.originalImagePath,

@@ -22,6 +22,10 @@ interface ChatMessageDao {
     @Query("DELETE FROM chat_messages WHERE sessionId = :sessionId")
     suspend fun deleteBySession(sessionId: Long)
 
+    /** Removes the given messages (editing or rewinding a conversation). No schema change. */
+    @Query("DELETE FROM chat_messages WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<Long>): Int
+
     @Query("SELECT * FROM chat_messages WHERE sessionId = :sessionId ORDER BY id ASC")
     suspend fun getAllForSession(sessionId: Long): List<ChatMessageEntity>
 }

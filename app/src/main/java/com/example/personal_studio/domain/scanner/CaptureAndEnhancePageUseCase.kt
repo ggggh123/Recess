@@ -11,7 +11,7 @@ import java.util.UUID
 import javax.inject.Inject
 
 /**
- * Given a freshly captured tmp photo + the user's confirmed 4 corners + filter
+ * Given a freshly captured tmp photo + the user's confirmed 4 corners + filter and rotation
  * selection, produces the orig + enhanced JPGs on disk under [dir] and returns
  * their paths. Does NOT touch the DB; the caller decides whether to append to
  * a scan doc, replace an existing page, or surface the path to chat.
@@ -34,12 +34,14 @@ class CaptureAndEnhancePageUseCase @Inject constructor(
         tmpCaptureFile: File,
         corners: List<PointF>,
         filter: ScanFilter,
+        /** Clockwise quarter turns chosen on the review screen; both saved images carry them. */
+        rotationQuarters: Int = 0,
     ): Result {
         dir.mkdirs()
         val stem = UUID.randomUUID().toString().take(8)
 
         val rawBmp = BitmapIo.decodeDownscaled(tmpCaptureFile)
-        val warpedColor = pipeline.warpAndFilter(rawBmp, corners, ScanFilter.COLOR)
+        val warpedColor = BitmapIo.rotateQuarters(pipeline.warpAndFilter(rawBmp, corners, ScanFilter.COLOR), rotationQuarters)
         val origFile = BitmapIo.writeJpeg(warpedColor, File(dir, "page-$stem-orig.jpg"))
 
         val cooked = if (filter == ScanFilter.COLOR) warpedColor else pipeline.applyFilter(warpedColor, filter)

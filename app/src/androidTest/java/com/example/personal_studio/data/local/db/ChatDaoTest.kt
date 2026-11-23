@@ -86,4 +86,14 @@ class ChatDaoTest {
         assertEquals(0, rowB.msgCount)
         assertNull(rowB.lastSnippet)
     }
+
+    @Test fun `deleting by ids removes only those messages`() = runTest {
+        val s = db.chatSessionDao().insert(ChatSessionEntity(title = "x", createdAt = 1, updatedAt = 1))
+        val ids = (1..4).map { n ->
+            db.chatMessageDao().insert(ChatMessageEntity(sessionId = s, role = MessageRole.USER,
+                contentMarkdown = "m$n", createdAt = n * 10L))
+        }
+        assertEquals(2, db.chatMessageDao().deleteByIds(ids.drop(2)))
+        assertEquals(listOf("m1", "m2"), db.chatMessageDao().listBySession(s).map { it.contentMarkdown })
+    }
 }

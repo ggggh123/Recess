@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,14 +39,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import androidx.activity.compose.BackHandler
 import com.example.personal_studio.ui.theme.DarkCanvas
 
 private enum class Corner { TL, TR, BL, BR, NONE }
 
 /**
- * Full-screen crop dialog. Key invariants:
+ * Full-screen crop layer, drawn over the chat page; system back closes it. Key invariants:
  *  - The displayed image respects the bitmap's aspect ratio (no letterboxing inside
  *    the Image composable itself). All crop coordinates are therefore in the image's
  *    displayed coordinate space; mapping back to bitmap pixel space is a single
@@ -60,12 +60,21 @@ fun ImageCropOverlay(
     onDismiss: () -> Unit,
     onConfirm: (croppedPath: String) -> Unit,
 ) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        DarkCanvas {
-        Box(Modifier.fillMaxSize().background(Tg.colors.bg)) {
+    // A full-screen layer in the page's own window, like the camera and filter steps before
+    // it. It used to be a Dialog: Compose sized the dialog's content to the whole screen while
+    // the system clipped the dialog window to the space between the bars, so on phones with a
+    // 3-button navigation bar the bar covered 取消 / 使用这张.
+    BackHandler(onBack = onDismiss)
+    DarkCanvas {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(Tg.colors.bg)
+                // A pointer-input node on the layer stops hit testing here, so touches the
+                // controls do not use never reach the chat below. It must not consume them:
+                // the buttons cancel a click whose events someone else consumed.
+                .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } },
+        ) {
             // Display copy sampled to ~2000 px (camera photos can exceed what a canvas may draw);
             // crop maths below maps back to the original pixel width.
             val decoded = remember(imagePath) {
@@ -77,10 +86,9 @@ fun ImageCropOverlay(
             val bitmap = decoded?.first
             val originalWidth = decoded?.second ?: 0
             if (bitmap == null) {
-                Text(
-                    "无法解码图片", color = Tg.colors.text,
-                    modifier = Modifier.align(Alignment.Center),
-                )
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("无法解码图片", color = Tg.colors.text)
+                }
                 return@DarkCanvas
             }
 
@@ -108,10 +116,12 @@ fun ImageCropOverlay(
 
             var draggingCorner by remember { mutableStateOf(Corner.NONE) }
 
+            // The image takes the space between the status bar and the action bar.
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = 80.dp),
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .statusBarsPadding(),
                 contentAlignment = Alignment.Center,
             ) {
                 Image(
@@ -202,9 +212,9 @@ fun ImageCropOverlay(
                 )
             }
 
-            // Bottom action bar
+            // Bottom action bar (PhotoActionBar keeps clear of the navigation bar)
             Column(
-                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Tg.colors.bg),
+                modifier = Modifier.fillMaxWidth().background(Tg.colors.bg),
             ) {
                 Text(
                     "拖动四角，只留下题目部分",
@@ -233,7 +243,6 @@ fun ImageCropOverlay(
                     },
                 )
             }
-        }
         }
     }
 }

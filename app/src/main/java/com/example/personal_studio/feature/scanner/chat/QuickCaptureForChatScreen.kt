@@ -1,6 +1,7 @@
 package com.example.personal_studio.feature.scanner.chat
 
 import android.graphics.PointF
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,7 +29,8 @@ private sealed interface ChatCaptureStep {
         val autoDetect: Boolean,
         val liveNorm: List<PointF>?,
     ) : ChatCaptureStep
-    data class Enhance(val tmp: String, val corners: List<PointF>) : ChatCaptureStep
+    /** [from] is the corner step it came from, so back returns there with the corners kept. */
+    data class Enhance(val tmp: String, val corners: List<PointF>, val from: EdgeDetect) : ChatCaptureStep
 }
 
 /**
@@ -40,11 +42,22 @@ private sealed interface ChatCaptureStep {
  * On final confirm, the VM warps + filters into a scratch dir, copies the
  * enhanced JPEG into `filesDir/chat-attachments/img_<ts>.jpg`, optionally
  * creates a library doc, then fires [onImagePicked] with the chat path —
- * same callback shape as the gallery picker in AttachmentSheet so the
+ * same callback shape as the gallery picker in AttachmentMenu so the
  * caller can hand it straight to the crop overlay.
  */
 @Composable
 fun QuickCaptureForChatScreen(
+    onImagePicked: (path: String) -> Unit,
+    onCancel: () -> Unit,
+) {
+    // The steps' view models (and their full-size bitmaps) live while the flow is open.
+    com.example.personal_studio.ui.components.ScopedViewModelStore {
+        QuickCaptureFlow(onImagePicked, onCancel)
+    }
+}
+
+@Composable
+private fun QuickCaptureFlow(
     onImagePicked: (path: String) -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -61,6 +74,16 @@ fun QuickCaptureForChatScreen(
         }
     }
 
+    // System back walks the flow backwards instead of leaving the conversation: review →
+    // corner adjustment (its corners are kept), corners → camera, camera → back to the chat.
+    BackHandler {
+        when (val s = step) {
+            is ChatCaptureStep.Capturing -> onCancel()
+            is ChatCaptureStep.EdgeDetect -> step = ChatCaptureStep.Capturing(System.identityHashCode(s))
+            is ChatCaptureStep.Enhance -> step = s.from
+        }
+    }
+
     when (val s = step) {
         is ChatCaptureStep.Capturing -> CameraCaptureScreen(
             outputDir = tmpDir,
@@ -73,15 +96,15 @@ fun QuickCaptureForChatScreen(
             capturedFilePath = s.tmp,
             autoDetect = s.autoDetect,
             preDetectedNormalized = s.liveNorm,
-            onConfirm = { corners -> step = ChatCaptureStep.Enhance(s.tmp, corners) },
+            onConfirm = { corners -> step = ChatCaptureStep.Enhance(s.tmp, corners, from = s) },
             onRetake = { step = ChatCaptureStep.Capturing(System.identityHashCode(step)) },
         )
         is ChatCaptureStep.Enhance -> EnhanceReviewScreen(
             capturedFilePath = s.tmp,
             cornersBitmapPx = s.corners,
             showSaveToLibCheckbox = true,
-            onConfirm = { filter, saveToLib ->
-                vm.finalize(File(s.tmp), s.corners, filter, saveToLib)
+            onConfirm = { filter, quarters, saveToLib ->
+                vm.finalize(File(s.tmp), s.corners, filter, quarters, saveToLib)
             },
             onCancel = { step = ChatCaptureStep.Capturing(System.identityHashCode(step)) },
         )

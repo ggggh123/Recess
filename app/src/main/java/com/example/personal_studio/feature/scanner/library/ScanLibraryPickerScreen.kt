@@ -1,5 +1,6 @@
 package com.example.personal_studio.feature.scanner.library
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -64,6 +65,11 @@ fun ScanLibraryPickerScreen(
     val state by vm.uiState.collectAsStateWithLifecycle()
     var selectedDocId by remember { mutableStateOf<Long?>(null) }
     val context = LocalContext.current
+
+    // System back mirrors the header arrow: pages → documents → back to the chat.
+    BackHandler {
+        if (selectedDocId != null) selectedDocId = null else onCancel()
+    }
 
     val current = selectedDocId
     if (current == null) {

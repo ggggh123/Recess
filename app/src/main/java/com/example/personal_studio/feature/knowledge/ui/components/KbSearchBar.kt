@@ -68,19 +68,21 @@ fun KbSearchBar(
             tint = if (focused) colors.accent else colors.textSecondary,
             modifier = Modifier.size(20.dp),
         )
+        // State-based field (see rememberTextFieldState); the clear button below resets it
+        // through [query].
+        val state = com.example.personal_studio.ui.components.rememberTextFieldState(query, onQueryChange)
         BasicTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            singleLine = true,
+            state = state,
+            lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine,
             textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.text),
             cursorBrush = SolidColor(colors.accent),
             interactionSource = interaction,
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = 10.dp, vertical = 12.dp),
-            decorationBox = { inner ->
+            decorator = { inner ->
                 Box(contentAlignment = Alignment.CenterStart) {
-                    if (query.isEmpty()) {
+                    if (state.text.isEmpty()) {
                         Text(
                             "搜索标题、题目或摘要",
                             color = colors.textSecondary.copy(alpha = 0.7f),

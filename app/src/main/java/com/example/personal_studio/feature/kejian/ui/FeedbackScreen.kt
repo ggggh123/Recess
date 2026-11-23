@@ -107,7 +107,8 @@ fun FeedbackScreen(onBack: () -> Unit, vm: FeedbackViewModel = hiltViewModel()) 
             )
             TgTextField(
                 value = body,
-                onValueChange = { if (it.length <= MAX) body = it },
+                onValueChange = { body = it },
+                maxLength = MAX,
                 label = "发生了什么",
                 placeholder = "在哪个页面、做了什么、看到了什么。能复现的话写下步骤。",
                 hint = "${body.length} / $MAX",
@@ -117,7 +118,8 @@ fun FeedbackScreen(onBack: () -> Unit, vm: FeedbackViewModel = hiltViewModel()) 
             )
             TgTextField(
                 value = contact,
-                onValueChange = { if (it.length <= 120) contact = it },
+                onValueChange = { contact = it },
+                maxLength = 120,
                 label = "联系方式（选填）",
                 placeholder = "QQ、微信或邮箱，需要追问时用",
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),

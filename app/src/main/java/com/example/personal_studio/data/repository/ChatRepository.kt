@@ -4,6 +4,7 @@ import com.example.personal_studio.data.local.db.dao.ChatMessageDao
 import com.example.personal_studio.data.local.db.dao.ChatSessionDao
 import com.example.personal_studio.data.local.db.entity.ChatMessageEntity
 import com.example.personal_studio.data.local.db.entity.ChatSessionEntity
+import com.example.personal_studio.domain.chat.messagesToDiscard
 import com.example.personal_studio.domain.model.ChatMessage
 import com.example.personal_studio.domain.model.ChatSession
 import com.example.personal_studio.domain.model.ChatSessionSummary
@@ -36,6 +37,13 @@ interface ChatRepository {
         tokenCount: Int? = null,
         modelUsed: String? = null,
     ): Long
+
+    /**
+     * Drops the turns after [messageId] (and [messageId] itself when [inclusive]), in display
+     * order; returns how many were removed. Used by 修改 (replace a message and answer again)
+     * and 回溯 (answer a message again, forgetting what came after it).
+     */
+    suspend fun deleteMessagesFrom(sessionId: Long, messageId: Long, inclusive: Boolean): Int
 }
 
 @Singleton
@@ -100,6 +108,14 @@ class ChatRepositoryImpl @Inject constructor(
         )
         sessionDao.touch(sessionId, now)
         return id
+    }
+
+    override suspend fun deleteMessagesFrom(sessionId: Long, messageId: Long, inclusive: Boolean): Int {
+        val ids = messagesToDiscard(listMessages(sessionId), messageId, inclusive)
+        if (ids.isEmpty()) return 0
+        val removed = messageDao.deleteByIds(ids)
+        sessionDao.touch(sessionId, System.currentTimeMillis())
+        return removed
     }
 }
 

@@ -2,6 +2,7 @@ package com.example.personal_studio.data.scanner
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.roundToInt
@@ -18,6 +19,17 @@ object BitmapIo {
         val opts = BitmapFactory.Options().apply { inSampleSize = sample }
         return BitmapFactory.decodeFile(file.absolutePath, opts)
             ?: error("failed to decode ${file.absolutePath}")
+    }
+
+    /**
+     * [src] turned clockwise by [quarters] × 90°. Quarter turns move pixels without resampling;
+     * zero (or a multiple of four) returns [src] itself.
+     */
+    fun rotateQuarters(src: Bitmap, quarters: Int): Bitmap {
+        val q = Math.floorMod(quarters, 4)
+        if (q == 0) return src
+        val m = Matrix().apply { postRotate(q * 90f) }
+        return Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
     }
 
     fun writeJpeg(bitmap: Bitmap, dest: File, quality: Int = 90): File {

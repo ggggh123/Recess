@@ -37,6 +37,24 @@ class SendMessageUseCaseTest {
         assertEquals("hello world", messages[1].contentMarkdown)
     }
 
+    @Test fun `reply answers the conversation as it stands without adding a user message`() = runTest {
+        val repo = FakeChatRepository()
+        val sid = repo.createSession("x")
+        repo.appendMessage(sid, MessageRole.USER, "什么是极限")
+        val llm = FakeLLMProvider(textChunks = listOf("极限", "是…"))
+        val useCase = SendMessageUseCase(repo, llm)
+
+        val chunks = useCase.reply(sid).toList()
+
+        assertTrue(chunks.none { it is SendChunk.UserPersisted })
+        assertTrue(chunks.last() is SendChunk.AiPersisted)
+        val messages = repo.listMessages(sid)
+        assertEquals(listOf(MessageRole.USER, MessageRole.AI), messages.map { it.role })
+        assertEquals("极限是…", messages[1].contentMarkdown)
+        // The model saw the system prompt and the one user turn.
+        assertEquals(listOf("什么是极限"), llm.lastMessages.filter { it.role == com.example.personal_studio.data.remote.llm.LlmRole.USER }.map { it.text })
+    }
+
     @Test fun `error chunk halts stream and no AI message is persisted`() = runTest {
         val repo = FakeChatRepository()
         val sid = repo.createSession("x")

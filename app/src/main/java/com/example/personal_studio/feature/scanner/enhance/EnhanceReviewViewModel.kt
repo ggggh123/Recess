@@ -1,7 +1,6 @@
 package com.example.personal_studio.feature.scanner.enhance
 
 import android.graphics.Bitmap
-import android.graphics.Matrix
 import android.graphics.PointF
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -133,10 +132,8 @@ class EnhanceReviewViewModel @AssistedInject constructor(
         return rotated
     }
 
-    private fun rotateQuarters(src: Bitmap, quarters: Int): Bitmap {
-        val m = Matrix().apply { postRotate(quarters * 90f) }
-        return Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
-    }
+    private fun rotateQuarters(src: Bitmap, quarters: Int): Bitmap =
+        com.example.personal_studio.data.scanner.BitmapIo.rotateQuarters(src, quarters)
 
     private fun baseFor(filter: ScanFilter): Bitmap? {
         val warpedHigh = _state.value.warpedColor ?: return null

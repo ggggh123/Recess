@@ -28,7 +28,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.NotificationsNone
@@ -207,14 +206,14 @@ fun QuickAddTaskSheet(
                 Text("新建待办", style = MaterialTheme.typography.headlineMedium.copy(fontSize = MaterialTheme.typography.headlineLarge.fontSize * 0.92f), color = c.text)
                 Label("要做什么", Modifier.padding(top = 16.dp))
                 val border by animateColorAsState(if (state.showError) c.error else c.line, tween(200), label = "titleBorder")
+                val titleState = com.example.personal_studio.ui.components.rememberTextFieldState(state.title, onTitle)
                 BasicTextField(
-                    value = state.title,
-                    onValueChange = onTitle,
-                    singleLine = true,
+                    state = titleState,
+                    lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = c.text, fontSize = MaterialTheme.typography.titleLarge.fontSize * 0.94f),
                     cursorBrush = SolidColor(c.accent),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { onSave() }),
+                    onKeyboardAction = { onSave() },
                     modifier = Modifier
                         .padding(top = 6.dp)
                         .fillMaxWidth()
@@ -222,9 +221,9 @@ fun QuickAddTaskSheet(
                         .focusRequester(focus)
                         .background(c.bg, RoundedCornerShape(14.dp))
                         .border(1.dp, border, RoundedCornerShape(14.dp)),
-                    decorationBox = { inner ->
+                    decorator = { inner ->
                         Box(Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.CenterStart) {
-                            if (state.title.isEmpty()) {
+                            if (titleState.text.isEmpty()) {
                                 Text("交电路实验报告", style = MaterialTheme.typography.bodyLarge, color = c.textTertiary)
                             }
                             inner()

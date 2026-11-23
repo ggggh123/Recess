@@ -3,6 +3,7 @@ package com.example.personal_studio.feature.chat.ui
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -34,9 +35,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Close
@@ -50,8 +56,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -64,12 +73,26 @@ import com.example.personal_studio.ui.components.ChatImageThumbnailSmall
 import com.example.personal_studio.ui.theme.Tg
 import com.example.personal_studio.ui.theme.TgMotion
 
-/** The user's turn: a right-aligned raised bubble, images above the text. */
+/**
+ * The user's turn: a right-aligned raised bubble, images above the text. The text can be
+ * selected (long press) and copied; below it 复制, 修改 (edit and answer again) and 回溯
+ * (answer it again, dropping what followed). [editing] outlines the bubble in the accent while
+ * the composer holds its edit; [canChange] is off while an answer is being generated.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun UserBubble(text: String, images: List<String>, modifier: Modifier = Modifier) {
+fun UserBubble(
+    text: String,
+    images: List<String>,
+    modifier: Modifier = Modifier,
+    editing: Boolean = false,
+    canChange: Boolean = true,
+    onCopy: (() -> Unit)? = null,
+    onEdit: (() -> Unit)? = null,
+    onRewind: (() -> Unit)? = null,
+) {
     val c = Tg.colors
-    Column(modifier.fillMaxWidth().padding(top = 14.dp, bottom = 6.dp), horizontalAlignment = Alignment.End) {
+    Column(modifier.fillMaxWidth().padding(top = 14.dp), horizontalAlignment = Alignment.End) {
         if (images.isNotEmpty()) {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
@@ -81,17 +104,28 @@ fun UserBubble(text: String, images: List<String>, modifier: Modifier = Modifier
         }
         if (text.isNotBlank()) {
             val shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 6.dp)
-            Text(
-                text,
-                style = MaterialTheme.typography.bodyLarge,
-                color = c.text,
-                modifier = Modifier
-                    .padding(start = 48.dp)
-                    .clip(shape)
-                    .background(c.surfaceRaised)
-                    .border(1.dp, c.line, shape)
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-            )
+            val outline by animateColorAsState(if (editing) c.accent else c.line, tween(200), label = "bubbleOutline")
+            SelectionContainer(Modifier.padding(start = 48.dp)) {
+                Text(
+                    text,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = c.text,
+                    modifier = Modifier
+                        .clip(shape)
+                        .background(c.surfaceRaised)
+                        .border(1.dp, outline, shape)
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                )
+            }
+        }
+        if (onCopy != null || onEdit != null || onRewind != null) {
+            Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (text.isNotBlank()) onCopy?.let { SmallAction(Icons.Outlined.ContentCopy, "复制", it) }
+                onEdit?.let { SmallAction(Icons.Outlined.Edit, "修改", it, enabled = canChange) }
+                onRewind?.let { SmallAction(Icons.Outlined.History, "回溯", it, enabled = canChange) }
+            }
+        } else {
+            Box(Modifier.padding(bottom = 6.dp))
         }
     }
 }
@@ -116,7 +150,12 @@ fun AiAnswer(
             Text(model, style = MaterialTheme.typography.labelSmall, color = c.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Box(Modifier.padding(top = 6.dp)) { content() }
-        if (footer != null || onSave != null || onCopy != null) {
+        // Fades in when a streamed answer is saved, instead of popping in under it.
+        AnimatedVisibility(
+            visible = footer != null || onSave != null || onCopy != null,
+            enter = fadeIn(tween(220)) + expandVertically(TgMotion.standard()),
+            exit = fadeOut(tween(120)) + shrinkVertically(),
+        ) {
             Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (footer != null) {
                     Text(footer, style = MaterialTheme.typography.bodySmall, color = c.textTertiary, modifier = Modifier.weight(1f))
@@ -131,19 +170,25 @@ fun AiAnswer(
 }
 
 @Composable
-private fun SmallAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+private fun SmallAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+) {
     val c = Tg.colors
+    val tint = if (enabled) c.textSecondary else c.textTertiary
     Row(
         Modifier
             .heightIn(min = 40.dp)
             .clip(RoundedCornerShape(12.dp))
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Icon(icon, contentDescription = null, tint = c.textSecondary, modifier = Modifier.size(15.dp))
-        Text(label, style = MaterialTheme.typography.bodySmall, color = c.textSecondary)
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(15.dp))
+        Text(label, style = MaterialTheme.typography.bodySmall, color = tint)
     }
 }
 
@@ -171,25 +216,57 @@ fun ChatErrorNote(message: String?, onDismiss: () -> Unit) {
 }
 
 /**
- * The input: images waiting to be sent, then a rounded field with the attach button on the
- * left and a round send button on the right (accent when there is something to send,
- * a stop square while the answer streams).
+ * The input: a note while a sent message is being edited, images waiting to be sent, then a
+ * rounded field with the attach button on the left (turns into × while the attach menu is
+ * open) and a round send button on the right (accent when there is something to send, a stop
+ * square while the answer streams).
+ *
+ * The field edits [input] directly (a [TextFieldState]): keyboard commands and the IME always
+ * act on the current text. The previous `String` field rebuilt its value from the last
+ * composition, so a key event that arrived right after a commit (IMEs that type paired quotes
+ * “” and then step the cursor back with ←) was applied to the text before the commit and
+ * erased the quotes; the cursor still moved.
  */
 @Composable
 fun ChatComposer(
-    input: String,
+    input: TextFieldState,
     images: List<String>,
     sending: Boolean,
     canAttach: Boolean,
-    onInput: (String) -> Unit,
     onAttach: () -> Unit,
     onRemoveImage: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
+    modifier: Modifier = Modifier,
+    editing: Boolean = false,
+    onCancelEdit: () -> Unit = {},
+    attachOpen: Boolean = false,
+    focusRequester: FocusRequester = remember { FocusRequester() },
 ) {
     val c = Tg.colors
-    val canSend = input.isNotBlank() || images.isNotEmpty()
-    Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 10.dp)) {
+    val canSend = input.text.isNotBlank() || images.isNotEmpty()
+    Column(modifier.fillMaxWidth().navigationBarsPadding().padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 10.dp)) {
+        AnimatedVisibility(editing, enter = expandVertically(TgMotion.standard()) + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            Row(Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Edit, contentDescription = null, tint = c.accent, modifier = Modifier.size(15.dp))
+                Text(
+                    "修改消息，发送后从这里重新回答",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = c.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(start = 6.dp),
+                )
+                Box(
+                    Modifier
+                        .heightIn(min = 36.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(role = Role.Button, onClick = onCancelEdit)
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text("取消", style = MaterialTheme.typography.labelLarge, color = c.accent) }
+            }
+        }
         AnimatedVisibility(images.isNotEmpty(), enter = expandVertically(TgMotion.standard()) + fadeIn(), exit = shrinkVertically() + fadeOut()) {
             Row(
                 Modifier.horizontalScroll(rememberScrollState()).padding(start = 4.dp, top = 6.dp, bottom = 8.dp),
@@ -217,25 +294,30 @@ fun ChatComposer(
             Modifier.fillMaxWidth().clip(shape).background(c.surface).border(1.dp, c.line, shape).padding(4.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
+            val plusTurn by animateFloatAsState(if (attachOpen) 45f else 0f, TgMotion.fast(), label = "plusTurn")
             RoundIcon(
                 icon = Icons.Rounded.Add,
-                label = "添加图片",
+                label = if (attachOpen) "收起添加图片菜单" else "添加图片",
                 bg = Color.Transparent,
                 tint = if (canAttach) c.textSecondary else c.textTertiary,
                 enabled = canAttach,
                 onClick = onAttach,
+                rotation = plusTurn,
             )
             BasicTextField(
-                value = input,
-                onValueChange = onInput,
+                state = input,
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = c.text),
                 cursorBrush = SolidColor(c.accent),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-                maxLines = 5,
-                modifier = Modifier.weight(1f).heightIn(min = 40.dp).padding(horizontal = 6.dp, vertical = 10.dp),
-                decorationBox = { inner ->
+                lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 40.dp)
+                    .padding(horizontal = 6.dp, vertical = 10.dp)
+                    .focusRequester(focusRequester),
+                decorator = { inner ->
                     Box(contentAlignment = Alignment.CenterStart) {
-                        if (input.isEmpty()) Text("问点什么…", style = MaterialTheme.typography.bodyLarge, color = c.textTertiary)
+                        if (input.text.isEmpty()) Text("问点什么…", style = MaterialTheme.typography.bodyLarge, color = c.textTertiary)
                         inner()
                     }
                 },
@@ -266,6 +348,7 @@ private fun RoundIcon(
     tint: Color,
     onClick: () -> Unit,
     enabled: Boolean = true,
+    rotation: Float = 0f,
 ) {
     Box(
         Modifier
@@ -276,7 +359,7 @@ private fun RoundIcon(
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = rotation })
     }
 }
 
