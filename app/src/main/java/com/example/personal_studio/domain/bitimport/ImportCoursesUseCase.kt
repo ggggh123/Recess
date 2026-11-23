@@ -1,5 +1,6 @@
 package com.example.personal_studio.domain.bitimport
 
+import com.example.personal_studio.data.network.bit.SchoolPageException
 import com.example.personal_studio.data.local.db.dao.TimelineDao
 import com.example.personal_studio.data.network.bit.BitApiClient
 import com.example.personal_studio.data.network.bit.NetworkMode
@@ -134,6 +135,8 @@ class ImportCoursesUseCase @Inject constructor(
             }
 
             return Fetched(items, currentTerm, pickedTermCode, resolvedAnchor, countToReplace)
+        } catch (e: SchoolPageException) {
+            emit(ImportStep.Failed(ImportError.School(e.problem)))
         } catch (io: IOException) {
             emit(ImportStep.Failed(ImportError.NetworkFail(io)))
         } catch (e: CancellationException) {
@@ -166,6 +169,6 @@ class ImportCoursesUseCase @Inject constructor(
         CasLoginDto.WrongCredentials -> ImportError.WrongCredentials
         CasLoginDto.AccountLocked -> ImportError.AccountLocked
         CasLoginDto.CaptchaRequired -> ImportError.CaptchaRequired
-        is CasLoginDto.UnknownFailure -> ImportError.ParseFail("CAS: $body")
+        is CasLoginDto.UnknownFailure -> problem?.let { ImportError.School(it) } ?: ImportError.ParseFail("CAS: $body")
     }
 }

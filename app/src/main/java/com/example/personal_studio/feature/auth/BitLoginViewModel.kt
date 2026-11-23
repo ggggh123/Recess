@@ -1,5 +1,6 @@
 package com.example.personal_studio.feature.auth
 
+import com.example.personal_studio.domain.bitimport.SchoolRoute
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.personal_studio.data.local.datastore.ImportCredentialPrefs
@@ -246,7 +247,8 @@ class BitLoginViewModel @Inject constructor(
 
     private suspend fun verifyCredentials(username: String, password: String, afterBrowser: Boolean) = run {
         _uiState.update { it.copy(stage = BitLoginStage.CheckingNetwork, error = null) }
-        val first = resolveNetworkMode(credPrefs.observeAll().value?.lastMode)
+        // The password is checked through 教学中心, which is public.
+        val first = resolveNetworkMode(credPrefs.observeAll().value?.lastMode, SchoolRoute.PUBLIC)
         _uiState.update { it.copy(stage = if (afterBrowser) BitLoginStage.VerifyingBrowser else BitLoginStage.Authenticating) }
         validate.validateAuto(LoginRequest(username, password, first), prompter)
     }

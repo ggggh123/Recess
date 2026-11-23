@@ -53,7 +53,7 @@ class GradePollWorkerTest {
     /** resolver 默认回显 LOCAL(creds.lastMode=LOCAL),不实际探测。 */
     private fun resolveLocal(): ResolveNetworkModeUseCase {
         val m = mockk<ResolveNetworkModeUseCase>()
-        coEvery { m.invoke(any()) } returns NetworkMode.LOCAL
+        coEvery { m.invoke(any(), any()) } returns NetworkMode.LOCAL
         return m
     }
 

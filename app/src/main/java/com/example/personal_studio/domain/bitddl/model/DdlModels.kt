@@ -57,6 +57,8 @@ sealed interface DdlSyncError {
     object CaptchaRequired : DdlSyncError
     object NeedReview : DdlSyncError
     data class ParseFail(val message: String) : DdlSyncError
+    /** The school answered with a page that says why (sign-in needed, busy...). */
+    data class School(val problem: com.example.personal_studio.data.network.bit.SchoolProblem) : DdlSyncError
     data class NetworkFail(val cause: String) : DdlSyncError
     data class Unexpected(val cause: String) : DdlSyncError
 }
@@ -91,6 +93,23 @@ data class DdlSyncOutcome(val bySource: Map<DdlSource, BackgroundDdlResult>) {
     val accountStop: DdlSyncError?
         get() = bySource.values.filterIsInstance<BackgroundDdlResult.Stop>().map { it.reason }
             .firstOrNull { it == DdlSyncError.WrongCredentials || it == DdlSyncError.AccountLocked }
+
+    /**
+     * 乐学 could not be reached at all. It resolves only on campus DNS and WebVPN only off
+     * campus, so when the chosen route is wrong it fails alone while 新乐学 (public) succeeds;
+     * the other route is then worth one try.
+     */
+    val lexueUnreachable: Boolean get() = bySource[DdlSource.LEXUE] == BackgroundDdlResult.Transient
+
+    /** Per platform, what [later] got, unless it only failed to connect where this one had an answer. */
+    fun then(later: DdlSyncOutcome): DdlSyncOutcome = DdlSyncOutcome(
+        (bySource.keys + later.bySource.keys).associateWith { source ->
+            val next = later.bySource[source]
+            val before = bySource[source]
+            if ((next == null || next == BackgroundDdlResult.Transient) && before != null) before
+            else next ?: BackgroundDdlResult.Transient
+        },
+    )
 
     /** 全部失败时展示的原因:账号问题优先,其次要验证,再按乐学、新乐学的顺序。 */
     val primaryError: DdlSyncError

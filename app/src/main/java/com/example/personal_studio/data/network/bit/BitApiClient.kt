@@ -44,6 +44,13 @@ class BitApiClient internal constructor(
     suspend fun clearBrowserSession() { browserSessions?.clear() }
     fun browserLoginUrl(): String = auth.urls.browserLoginUrl()
 
+    /** [url] as this session reaches it: through WebVPN when the session is open off campus. */
+    fun routed(url: okhttp3.HttpUrl): okhttp3.HttpUrl = auth.urls.route(url, networkMode)
+
+    /** The id this app answers WebVPN's device check with (one per process in tests). */
+    fun webVpnFingerprint(): String = browserSessions?.webVpnFingerprint() ?: processFingerprint
+    private val processFingerprint by lazy { BitBrowserSessions.newFingerprint() }
+
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
     private val converterFactory =
         json.asConverterFactory("application/json".toMediaType())
@@ -65,8 +72,13 @@ class BitApiClient internal constructor(
         openedMode = mode
     }
 
-    /** Releases service instances and temporary native cookies. Browser cookies
-     * remain until expiry, account switch or logout. */
+    /** Releases service instances, temporary native cookies and idle connections. Browser
+     * cookies remain until expiry, account switch or logout.
+     *
+     * Idle connections go too: between syncs a mobile carrier's NAT (or a switch between
+     * Wi-Fi and mobile data) silently drops them, and a request sent on one then waits out
+     * the whole read timeout. On a real phone the first CAS request of a sync did exactly
+     * that after 2–11 idle minutes. A new session therefore always starts on new connections. */
     fun close() {
         jwappRetrofit = null
         jwmsRetrofit = null
@@ -74,6 +86,7 @@ class BitApiClient internal constructor(
         eclassRetrofit = null
         openedMode = null
         cookieJar.clear()
+        client.connectionPool.evictAll()
     }
 
     val jwapp: BitJwappService

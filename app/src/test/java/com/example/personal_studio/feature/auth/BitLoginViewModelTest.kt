@@ -75,7 +75,7 @@ class BitLoginViewModelTest {
     /** resolve mock:回显 lastMode(?: LOCAL),不触发探测。 */
     private fun resolveEcho(): ResolveNetworkModeUseCase {
         val m = mockk<ResolveNetworkModeUseCase>()
-        coEvery { m.invoke(any()) } returns NetworkMode.LOCAL
+        coEvery { m.invoke(any(), any()) } returns NetworkMode.LOCAL
         return m
     }
 
@@ -173,7 +173,7 @@ class BitLoginViewModelTest {
 
     @Test fun `probe exception does not leave loading stuck`() = runTest {
         val resolver = mockk<ResolveNetworkModeUseCase>()
-        coEvery { resolver.invoke(any()) } throws IllegalStateException("probe")
+        coEvery { resolver.invoke(any(), any()) } throws IllegalStateException("probe")
         val sut = vm(mockk(), resolver = resolver)
         sut.onUsernameChange("student"); sut.onPasswordChange("pw")
         sut.onLogin(); advanceUntilIdle()

@@ -1,6 +1,10 @@
 package com.example.personal_studio.domain.bitddl
 
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import com.example.personal_studio.data.network.bit.SchoolPageException
 import com.example.personal_studio.data.network.bit.BitApiClient
+import com.example.personal_studio.data.network.bit.BitAuthUrls
 import com.example.personal_studio.data.network.bit.dto.CasLoginDto
 import com.example.personal_studio.domain.bitddl.model.DdlSyncError
 import com.example.personal_studio.domain.bitddl.model.DdlSyncRequest
@@ -25,10 +29,14 @@ class GenerateLexueIcalUrlUseCase @Inject constructor(
             val indexHtml = (apiClient.lexue.getIndexHtml().let { it.body() ?: it.errorBody() })?.string().orEmpty()
             val sesskey = extractSesskey(indexHtml)
                 ?: return LexueUrlResult.Failed(DdlSyncError.ParseFail("no sesskey"))
-            val exportHtml = (apiClient.lexue.exportCalendar(sesskey).let { it.body() ?: it.errorBody() })?.string().orEmpty()
-            val url = extractIcalUrl(exportHtml)
+            val export = apiClient.lexue.exportCalendar(sesskey)
+            val exportHtml = (export.body() ?: export.errorBody())?.string().orEmpty()
+            val url = extractIcalUrl(exportHtml, export.raw().request.url)
                 ?: return LexueUrlResult.Failed(DdlSyncError.ParseFail("no calendar url"))
-            LexueUrlResult.Ok(url)
+            // Through WebVPN the page may show the gateway's address; keep 乐学's own.
+            LexueUrlResult.Ok(url.toHttpUrlOrNull()?.let { SCHOOL_URLS.unroute(it).toString() } ?: url)
+        } catch (e: SchoolPageException) {
+            LexueUrlResult.Failed(DdlSyncError.School(e.problem))
         } catch (io: IOException) {
             LexueUrlResult.Failed(DdlSyncError.NetworkFail(io.message ?: "io"))
         } catch (e: CancellationException) {
@@ -43,16 +51,20 @@ class GenerateLexueIcalUrlUseCase @Inject constructor(
         CasLoginDto.WrongCredentials -> DdlSyncError.WrongCredentials
         CasLoginDto.AccountLocked -> DdlSyncError.AccountLocked
         CasLoginDto.CaptchaRequired -> DdlSyncError.CaptchaRequired
-        is CasLoginDto.UnknownFailure -> DdlSyncError.ParseFail("CAS: $body")
+        is CasLoginDto.UnknownFailure -> problem?.let { DdlSyncError.School(it) } ?: DdlSyncError.ParseFail("CAS: $body")
     }
 
     companion object {
+        private val SCHOOL_URLS = BitAuthUrls()
         private val SESSKEY = Regex("""["']sesskey["']\s*:\s*["']([^"']+)["']""")
-        private val ICAL_URL = Regex("""https?://[^\s"'<>]*export_execute\.php[^\s"'<>]*""")
+        private val ICAL_URL = Regex("""(?:https?://[^\s"'<>]*?)?/[^\s"'<>]*export_execute\.php[^\s"'<>]*""")
 
         fun extractSesskey(html: String): String? = SESSKEY.find(html)?.groupValues?.get(1)
 
-        fun extractIcalUrl(html: String): String? =
-            ICAL_URL.find(html)?.value?.replace("&amp;", "&")
+        /** The subscription address on the export page; a path (as WebVPN may rewrite it) is resolved against [page]. */
+        fun extractIcalUrl(html: String, page: HttpUrl? = null): String? {
+            val found = ICAL_URL.find(html)?.value?.replace("&amp;", "&") ?: return null
+            return if (found.startsWith("http://") || found.startsWith("https://")) found else page?.resolve(found)?.toString()
+        }
     }
 }

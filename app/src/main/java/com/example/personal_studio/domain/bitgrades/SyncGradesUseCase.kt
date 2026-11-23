@@ -1,5 +1,7 @@
 package com.example.personal_studio.domain.bitgrades
 
+import com.example.personal_studio.data.network.bit.SchoolPageException
+import com.example.personal_studio.data.network.bit.SchoolProblem
 import com.example.personal_studio.core.util.GpaCalculator
 import com.example.personal_studio.data.local.db.entity.GradeEntryEntity
 import com.example.personal_studio.data.local.db.entity.TermRankEntity
@@ -67,6 +69,8 @@ class SyncGradesUseCase @Inject constructor(
 
             val termCount = enriched.map { it.termCode }.distinct().size
             emit(SyncGradesStep.Done(termCount, enriched.size))
+        } catch (e: SchoolPageException) {
+            emit(SyncGradesStep.Failed(GradesSyncError.School(e.problem)))
         } catch (io: IOException) {
             emit(SyncGradesStep.Failed(GradesSyncError.NetworkFail(io)))
         } catch (e: CancellationException) {
@@ -145,7 +149,7 @@ class SyncGradesUseCase @Inject constructor(
     suspend fun syncForBackground(req: GradesSyncRequest): com.example.personal_studio.domain.bitgrades.model.BackgroundSyncResult {
         return try {
             val login = ssoLogin.loginGrades(apiClient, req.username, req.password)
-            login.toGradesError()?.let { return com.example.personal_studio.domain.bitgrades.model.BackgroundSyncResult.Stop(it) }
+            login.toGradesError()?.let { return backgroundStop(it) }
             val resp = apiClient.jwms.getScoreListHtml()
             val html = (resp.body() ?: resp.errorBody())?.string().orEmpty()
             pageError(resp.code(), html)?.let {
@@ -154,6 +158,8 @@ class SyncGradesUseCase @Inject constructor(
             val now = System.currentTimeMillis()
             val entries = parser.parse(html, now)
             com.example.personal_studio.domain.bitgrades.model.BackgroundSyncResult.Ok(entries)
+        } catch (e: SchoolPageException) {
+            backgroundStop(GradesSyncError.School(e.problem))
         } catch (io: java.io.IOException) {
             com.example.personal_studio.domain.bitgrades.model.BackgroundSyncResult.Transient
         } catch (e: CancellationException) {
@@ -162,6 +168,11 @@ class SyncGradesUseCase @Inject constructor(
             com.example.personal_studio.domain.bitgrades.model.BackgroundSyncResult.Transient
         }
     }
+
+    /** A busy school is worth retrying later; anything else needs the person. */
+    private fun backgroundStop(e: GradesSyncError): com.example.personal_studio.domain.bitgrades.model.BackgroundSyncResult =
+        if (e is GradesSyncError.School && e.problem == SchoolProblem.SERVER_BUSY) com.example.personal_studio.domain.bitgrades.model.BackgroundSyncResult.Transient
+        else com.example.personal_studio.domain.bitgrades.model.BackgroundSyncResult.Stop(e)
 
     private fun pageError(code: Int, html: String): GradesSyncError? = when {
         code !in 200..299 -> GradesSyncError.ParseFail("成绩查询失败 HTTP $code")
@@ -176,7 +187,7 @@ class SyncGradesUseCase @Inject constructor(
         CasLoginDto.WrongCredentials -> GradesSyncError.WrongCredentials
         CasLoginDto.AccountLocked -> GradesSyncError.AccountLocked
         CasLoginDto.CaptchaRequired -> GradesSyncError.CaptchaRequired
-        is CasLoginDto.UnknownFailure -> GradesSyncError.ParseFail("CAS: $body")
+        is CasLoginDto.UnknownFailure -> problem?.let { GradesSyncError.School(it) } ?: GradesSyncError.ParseFail("CAS: $body")
     }
 
 }

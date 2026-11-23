@@ -34,6 +34,8 @@ sealed interface ExamSyncError {
     object AccountLocked : ExamSyncError
     object CaptchaRequired : ExamSyncError
     data class ParseFail(val message: String) : ExamSyncError
+    /** The school answered with a page that says why (sign-in needed, busy...). */
+    data class School(val problem: com.example.personal_studio.data.network.bit.SchoolProblem) : ExamSyncError
     data class NetworkFail(val cause: String) : ExamSyncError
     data class Unexpected(val cause: String) : ExamSyncError
 }

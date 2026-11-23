@@ -5,9 +5,11 @@ import com.example.personal_studio.data.network.bit.BitApiClient
 import com.example.personal_studio.data.network.bit.BitAuthPages
 import com.example.personal_studio.data.network.bit.BitAuthResponse
 import com.example.personal_studio.data.network.bit.BitAuthSession
+import com.example.personal_studio.data.network.bit.BitTrace
 import com.example.personal_studio.data.network.bit.CasApi
 import com.example.personal_studio.data.network.bit.CasSecondFactorPage
 import com.example.personal_studio.data.network.bit.NetworkMode
+import com.example.personal_studio.data.network.bit.SchoolProblem
 import com.example.personal_studio.data.network.bit.dto.CasInitDto
 import com.example.personal_studio.data.network.bit.dto.CasLoginDto
 import com.example.personal_studio.data.network.bit.origin
@@ -21,7 +23,9 @@ import javax.inject.Inject
  * until the gateway session is ready, then redeem it through the selected route. */
 class SsoLoginUseCase @Inject constructor() {
     private enum class Target { JWAPP, JWMS, LEXUE, ECLASS }
-    private class Rejected(val result: CasLoginDto) : Exception()
+    private class Rejected(val result: CasLoginDto, val why: String = "") : Exception()
+    /** WebVPN showed its sign-in or device check instead of the site. */
+    private class GatewayGate(val at: HttpUrl) : Exception()
 
     /**
      * The interactive sign-in (教学中心). With a [prompter], an SMS second step or picture captcha
@@ -66,12 +70,9 @@ class SsoLoginUseCase @Inject constructor() {
                 Target.ECLASS -> eclassService(session) ?: return CasLoginDto.Success
             }
             val callback = requestTicket(session, service, username, password, prompter)
-            // 乐学 and 新乐学 are public: they never go through WebVPN.
-            val mode = if (target == Target.LEXUE || target == Target.ECLASS) NetworkMode.LOCAL else api.networkMode
-            if (mode == NetworkMode.WEBVPN) {
-                val gatewayTicket = requestTicket(session, urls.gatewayCallback.toHttpUrl(), username, password)
-                follow(session, gatewayTicket, NetworkMode.LOCAL, "WebVPN 登录")
-            }
+            // 新乐学 is public: it never goes through WebVPN. 乐学 resolves only on campus.
+            val mode = if (target == Target.ECLASS) NetworkMode.LOCAL else api.networkMode
+            if (mode == NetworkMode.WEBVPN) signInGateway(api, session, username, password)
             if (target == Target.JWMS) {
                 // jwms needs its root-session cookie before redeeming the CAS ticket.
                 val root = session.request(urls.route(service, mode))
@@ -83,8 +84,55 @@ class SsoLoginUseCase @Inject constructor() {
             }
             CasLoginDto.Success
         } catch (e: Rejected) {
+            BitTrace.log("login $target: ${e.result.javaClass.simpleName} ${e.why}".trimEnd())
             e.result
+        } catch (e: GatewayGate) {
+            BitTrace.log("login $target: WebVPN 未登录 ${BitTrace.where(e.at)}")
+            CasLoginDto.UnknownFailure("WebVPN 未登录：${BitTrace.where(e.at)}", SchoolProblem.WEBVPN_SIGN_IN)
         }
+    }
+
+    /**
+     * Signs the WebVPN gateway in with a CAS ticket of its own. A new gateway session first wants
+     * a device fingerprint (its /fingerprint page runs FingerprintJS and requests /set-fingerprint);
+     * a ticket redeemed before that is dropped on the way to the check, leaving the gateway signed
+     * out. So the check is answered first, and once more with a fresh ticket if it still asks.
+     *
+     * Only the redemption itself is checked. Once signed in, the gateway sends the browser on to
+     * the page it last wanted to open, which can be a stale callback ending in an error page; that
+     * page says nothing about the sign-in, so it is not followed.
+     */
+    private suspend fun signInGateway(api: BitApiClient, session: BitAuthSession, username: String, password: String) {
+        val urls = session.urls
+        repeat(2) { attempt ->
+            answerDeviceCheck(session, api.webVpnFingerprint())
+            val ticket = requestTicket(session, urls.gatewayCallback.toHttpUrl(), username, password)
+            val response = session.request(ticket)
+            val next = response.redirect()
+            val signedOut = when (response.code) {
+                // Signed in unless sent back to the device check, its sign-in, or CAS.
+                in 300..399 -> next == null || urls.isGatewayGate(next) || urls.isCas(urls.unroute(next))
+                // The gateway answered with its own sign-in page.
+                in 200..299 -> true
+                else -> reject(response, "WebVPN 登录")
+            }
+            if (!signedOut) return
+            BitTrace.log("login: WebVPN 第 ${attempt + 1} 次仍未登录 → ${next?.let(BitTrace::where) ?: BitTrace.where(response.url)}")
+        }
+        throw Rejected(
+            CasLoginDto.UnknownFailure("WebVPN 登录：网关没有接受设备校验", SchoolProblem.WEBVPN_SIGN_IN),
+            "WebVPN 设备校验未通过",
+        )
+    }
+
+    /** Answers WebVPN's device check when its entry leads there; a signed-in gateway is left alone. */
+    private suspend fun answerDeviceCheck(session: BitAuthSession, fingerprint: String) {
+        val urls = session.urls
+        val entry = session.request(urls.gatewayEntry())
+        val check = entry.redirect()?.takeIf { entry.code in 300..399 && urls.isGatewayFingerprint(it) } ?: return
+        val page = session.request(check, referer = entry.url)
+        if (page.code !in 200..299) return
+        session.request(urls.fingerprintSubmit(check, fingerprint), referer = check)
     }
 
     /** Follows 新乐学 → zy-identity until the hand-off to CAS and returns the service it asks
@@ -122,7 +170,7 @@ class SsoLoginUseCase @Inject constructor() {
         if (initResponse.code !in 200..299) reject(initResponse, "统一身份认证初始化失败")
         // Modern CAS may render an SMS/risk page instead of the password form.
         val init = try { parseLoginPage(initResponse.body) } catch (_: IllegalStateException) {
-            throw Rejected(BitAuthPages.loginFailure(initResponse.body) ?: CasLoginDto.CaptchaRequired)
+            throw Rejected(BitAuthPages.loginFailure(initResponse.body) ?: CasLoginDto.CaptchaRequired, "CAS 首页不是密码表单")
         }
         val cas = CasApi(session).apply { referer = loginUrl }
         // Only an interactive sign-in asks: a captcha the person cannot see would only fail.
@@ -142,7 +190,7 @@ class SsoLoginUseCase @Inject constructor() {
         BitAuthPages.secondFactorPage(response.body, response.url)?.let { page ->
             return smsSecondStep(session, cas, page, response.url, service, username, prompter)
         }
-        BitAuthPages.loginFailure(response.body)?.let { throw Rejected(it) }
+        BitAuthPages.loginFailure(response.body)?.let { throw Rejected(it, "提交密码后：" + BitAuthPages.describe(response.body)) }
         // A blank body, HTTP error, or 200 without a ticket never means success.
         reject(response, "统一身份认证未签发服务凭证")
     }
@@ -150,10 +198,10 @@ class SsoLoginUseCase @Inject constructor() {
     /** The code and payload for the picture captcha the CAS wants, asked of the person; null when there is none. */
     private suspend fun captchaAnswer(cas: CasApi, username: String, prompter: CasPrompter): Pair<String, String>? {
         val captcha = try { cas.captchaFor(username) } catch (_: IOException) { null } ?: return null
-        val image = captcha.image ?: throw Rejected(CasLoginDto.CaptchaRequired)
+        val image = captcha.image ?: throw Rejected(CasLoginDto.CaptchaRequired, "图形验证码无法显示")
         return when (val answer = prompter.captcha(image)) {
             is CaptchaDecision.Answer -> answer.code.trim() to captcha.payload.toString()
-            CaptchaDecision.UseWebPage -> throw Rejected(CasLoginDto.CaptchaRequired)
+            CaptchaDecision.UseWebPage -> throw Rejected(CasLoginDto.CaptchaRequired, "改用网页验证")
         }
     }
 
@@ -167,11 +215,11 @@ class SsoLoginUseCase @Inject constructor() {
         session: BitAuthSession, cas: CasApi, page: CasSecondFactorPage, pageUrl: HttpUrl,
         service: HttpUrl, username: String, prompter: CasPrompter?,
     ): HttpUrl {
-        if (prompter == null || !session.urls.isCas(page.formAction)) throw Rejected(CasLoginDto.CaptchaRequired)
+        if (prompter == null || !session.urls.isCas(page.formAction)) throw Rejected(CasLoginDto.CaptchaRequired, "需要短信二次验证")
         cas.referer = pageUrl
         val challenge = CasSmsChallenge(cas, page)
-        if (!challenge.prepare()) throw Rejected(CasLoginDto.CaptchaRequired)
-        val verified = prompter.sms(challenge) as? SmsDecision.Verified ?: throw Rejected(CasLoginDto.CaptchaRequired)
+        if (!challenge.prepare()) throw Rejected(CasLoginDto.CaptchaRequired, "短信验证准备失败")
+        val verified = prompter.sms(challenge) as? SmsDecision.Verified ?: throw Rejected(CasLoginDto.CaptchaRequired, "短信验证未完成")
         val response = session.request(page.formAction, fields = linkedMapOf(
             "username" to username,
             "password" to verified.code,
@@ -183,7 +231,7 @@ class SsoLoginUseCase @Inject constructor() {
             "trustDevice" to verified.trustDevice.toString(),
         ), referer = pageUrl)
         ticket(response, service)?.let { return it }
-        BitAuthPages.loginFailure(response.body)?.let { throw Rejected(it) }
+        BitAuthPages.loginFailure(response.body)?.let { throw Rejected(it, "短信验证后：" + BitAuthPages.describe(response.body)) }
         reject(response, "短信验证后未签发服务凭证")
     }
 
@@ -208,9 +256,13 @@ class SsoLoginUseCase @Inject constructor() {
                 previous = response.url
                 next = session.urls.route(redirect, mode)
             } else {
+                if (session.urls.isGatewayGate(response.url)) throw GatewayGate(response.url)
                 if (response.code !in 200..299) reject(response, stage)
                 if (session.urls.isCas(response.url) || BitAuthPages.isSessionFailure(response.body)) {
-                    throw Rejected(BitAuthPages.loginFailure(response.body) ?: CasLoginDto.CaptchaRequired)
+                    throw Rejected(
+                        BitAuthPages.loginFailure(response.body) ?: CasLoginDto.CaptchaRequired,
+                        "$stage 落到登录页 ${BitTrace.where(response.url)}",
+                    )
                 }
                 val script = BitAuthPages.scriptRedirect(response.body)?.let { response.url.resolve(it) }
                 if (script == null) return
@@ -221,8 +273,9 @@ class SsoLoginUseCase @Inject constructor() {
         throw Rejected(CasLoginDto.UnknownFailure("$stage：重定向次数过多，请重新完成网页验证"))
     }
 
-    private fun reject(response: BitAuthResponse, stage: String): Nothing =
-        throw Rejected(CasLoginDto.UnknownFailure(response.diagnostic(stage)))
+    private fun reject(response: BitAuthResponse, stage: String): Nothing = throw Rejected(
+        CasLoginDto.UnknownFailure(response.diagnostic(stage), SchoolProblem.SERVER_BUSY.takeIf { response.code >= 500 }),
+    )
 
     fun parseLoginPage(html: String): CasInitDto = CasInitDto(
         execution = BitAuthPages.idText(html, "login-page-flowkey") ?: error("统一身份认证页面缺少 flowkey"),

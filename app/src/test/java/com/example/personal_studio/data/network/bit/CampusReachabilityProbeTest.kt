@@ -39,7 +39,13 @@ class CampusReachabilityProbeTest {
                 assertFalse(probe.localReachable())
             }
             assertEquals(4, server.requestCount)
-            repeat(4) { assertEquals("HEAD", server.takeRequest().method) }
+            // jwms refuses HEAD with 403, so the probe must ask with GET; and it keeps no
+            // connection that could go stale before the next probe.
+            repeat(4) {
+                val request = server.takeRequest()
+                assertEquals("GET", request.method)
+                assertEquals("close", request.getHeader("Connection"))
+            }
         }
     }
 }

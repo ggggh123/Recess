@@ -38,14 +38,16 @@ object BitUrlsConfig {
         lexue = "https://lexue.bit.edu.cn/",
     )
 
-    /** Off-campus endpoints, matching BIT-Login v4.0.2's gateway host mapping.
+    /** Off-campus endpoints, matching BIT-Login v4.0.2's gateway host mapping (see [WebVpnCodec]).
      * CAS remains direct; BitAuthUrls rewrites each issued service callback. */
     val WEBVPN = Hosts(
         jwapp = "https://webvpn.bit.edu.cn/https/" +
             "77726476706e69737468656265737421faef5b842238695c720999bcd6572a216b231105adc27d/",
         jwms  = "https://webvpn.bit.edu.cn/http/" +
             "77726476706e69737468656265737421fae04c8f69326144300d8db9d6562d/",
-        lexue = "https://lexue.bit.edu.cn/",
+        // 乐学 resolves only on campus DNS, so off campus it goes through the gateway too.
+        lexue = "https://webvpn.bit.edu.cn/https/" +
+            "77726476706e69737468656265737421fcf25989227e6a596a468ca88d1b203b/",
     )
 
     fun hostsFor(mode: NetworkMode): Hosts = when (mode) {

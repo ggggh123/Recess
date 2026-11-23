@@ -105,11 +105,20 @@ object SyncText {
         SyncFailure.REVIEW -> "需要先在教务系统完成评教"
         SyncFailure.NETWORK -> "连不上学校服务器，请检查网络后重试"
         SyncFailure.EMPTY -> "学校返回为空，本机数据未改动"
+        SyncFailure.GATEWAY -> "校外访问需要先验证"
+        SyncFailure.SESSION -> "登录已过期，请重新登录"
+        SyncFailure.BUSY -> "学校系统繁忙或正在维护，请稍后再试"
         SyncFailure.OTHER, null -> "学校返回了意外的内容，稍后再试"
     }
 
     /** Failures fixed by signing in again (the login page opens the school's own verification). */
-    fun needsLogin(reason: SyncFailure?): Boolean = reason == SyncFailure.VERIFY || reason == SyncFailure.PASSWORD
+    fun needsLogin(reason: SyncFailure?): Boolean = reason in setOf(
+        SyncFailure.VERIFY, SyncFailure.PASSWORD, SyncFailure.SESSION, SyncFailure.GATEWAY,
+    )
+
+    /** The button of a failure fixed by signing in. */
+    fun loginAction(reason: SyncFailure?): String =
+        if (reason == SyncFailure.VERIFY || reason == SyncFailure.GATEWAY) "去验证" else "重新登录"
 
     fun subtitle(progress: SyncAllProgress?, lastSyncAt: Long?, now: Long): String {
         if (progress == null || progress.noCredentials) {
@@ -157,7 +166,7 @@ fun SyncSourceRows(progress: SyncAllProgress?, onLogin: () -> Unit, modifier: Mo
                     state.status == SyncSourceStatus.OK && state.detail != null ->
                         Text(state.detail, style = MaterialTheme.typography.bodyMedium, color = c.text)
                     state.status == SyncSourceStatus.FAILED && SyncText.needsLogin(state.failure) ->
-                        SmallPill(if (state.failure == SyncFailure.VERIFY) "去验证" else "重新登录", onLogin)
+                        SmallPill(SyncText.loginAction(state.failure), onLogin)
                 }
             }
         }

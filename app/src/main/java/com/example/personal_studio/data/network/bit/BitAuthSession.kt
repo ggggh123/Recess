@@ -33,6 +33,7 @@ internal data class BitAuthUrls(
         "https://jxzxehallapp.bit.edu.cn" to BitUrlsConfig.WEBVPN.jwapp,
         "http://jwms.bit.edu.cn" to BitUrlsConfig.WEBVPN.jwms,
         "https://jwms.bit.edu.cn" to BitUrlsConfig.WEBVPN.jwms.replace("/http/", "/https/"),
+        "https://lexue.bit.edu.cn" to BitUrlsConfig.WEBVPN.lexue,
     ),
 ) {
     fun route(url: HttpUrl, mode: NetworkMode): HttpUrl {
@@ -41,6 +42,26 @@ internal data class BitAuthUrls(
         return (proxy + url.encodedPath.removePrefix("/")).toHttpUrl().newBuilder()
             .encodedQuery(url.encodedQuery).encodedFragment(url.encodedFragment).build()
     }
+
+    /** The school URL a WebVPN URL stands for; any other URL as it is. */
+    fun unroute(url: HttpUrl): HttpUrl = WebVpnCodec.original(url, gatewayHost()) ?: url
+
+    private fun gatewayHost(): String = gatewayCallback.toHttpUrl().host
+
+    /** WebVPN's own entry; a new gateway session is sent from here to its device check. */
+    fun gatewayEntry(): HttpUrl = gatewayCallback.toHttpUrl().newBuilder().query(null).build()
+
+    /** WebVPN's device check: a page whose script computes a browser fingerprint and submits it. */
+    fun isGatewayFingerprint(url: HttpUrl): Boolean =
+        url.host == gatewayHost() && url.encodedPath.trimEnd('/') == "/fingerprint"
+
+    /** Pages WebVPN shows instead of the proxied site while its session is not signed in. */
+    fun isGatewayGate(url: HttpUrl): Boolean =
+        isGatewayFingerprint(url) || (url.host == gatewayHost() && url.encodedPath.trimEnd('/') == "/login")
+
+    /** What the device-check script requests: the page's own query plus `fingerprint`. */
+    fun fingerprintSubmit(page: HttpUrl, fingerprint: String): HttpUrl = page.newBuilder()
+        .encodedPath("/set-fingerprint").setQueryParameter("fingerprint", fingerprint).fragment(null).build()
 
     fun trusted(url: HttpUrl): Boolean = url.origin() in
         (proxyBases.keys + proxyBases.values.map { it.toHttpUrl().origin() } +
@@ -133,8 +154,9 @@ internal class BitAuthSession(client: OkHttpClient, val urls: BitAuthUrls) {
     }
 
     private suspend fun execute(request: Request, publicPreflight: Boolean): BitAuthResponse {
+        val flow = request.newBuilder().tag(BitAuthFlow::class.java, BitAuthFlow).build()
         return suspendCancellableCoroutine { continuation ->
-            val call = (if (publicPreflight) publicClient else client).newCall(request)
+            val call = (if (publicPreflight) publicClient else client).newCall(flow)
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {

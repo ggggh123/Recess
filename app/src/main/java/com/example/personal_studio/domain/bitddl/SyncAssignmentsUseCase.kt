@@ -1,5 +1,7 @@
 package com.example.personal_studio.domain.bitddl
 
+import com.example.personal_studio.data.network.bit.SchoolPageException
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import com.example.personal_studio.data.local.datastore.DdlSyncPrefs
 import com.example.personal_studio.data.network.bit.BitApiClient
 import com.example.personal_studio.data.network.bit.NetworkMode
@@ -71,12 +73,13 @@ class SyncAssignmentsUseCase @Inject constructor(
     }
 
     /** Auto 模式:先按 [req].networkMode 试,连接级失败(NetworkFail)自动换另一网络模式重试一次,
-     *  成功后回告生效模式。其余失败不回退。 */
+     *  成功后回告生效模式。其余失败不回退。只有乐学连不上(新乐学成功)也算连接级失败:
+     *  乐学校内直连、校外走 WebVPN,线路选错时只有它失败。 */
     fun syncAuto(req: DdlSyncRequest, onModeSucceeded: (NetworkMode) -> Unit): Flow<DdlSyncStep> =
         autoNetworkFallback(
             first = req.networkMode,
-            isConnFail = { it is DdlSyncStep.Failed && it.error is DdlSyncError.NetworkFail },
-            isDone = { it is DdlSyncStep.Done },
+            isConnFail = { it.unreachable() },
+            isDone = { it is DdlSyncStep.Done && !it.unreachable() },
             switchingStep = { DdlSyncStep.SwitchingMode(it) },
             onModeSucceeded = onModeSucceeded,
         ) { mode -> sync(req.copy(networkMode = mode)) }
@@ -127,9 +130,19 @@ class SyncAssignmentsUseCase @Inject constructor(
         }
     }
 
+    /**
+     * The subscription is stored as 乐学's own address; off campus it is read through WebVPN.
+     * A WebVPN that is not signed in answers like any non-calendar page: the caller signs in
+     * (which signs WebVPN in too) and derives the address again.
+     */
     private suspend fun fetchIcs(url: String): String {
-        val resp = apiClient.lexue.getIcs(url)
-        return (resp.body() ?: resp.errorBody())?.string().orEmpty()
+        val routed = url.toHttpUrlOrNull()?.let { apiClient.routed(it).toString() } ?: url
+        return try {
+            val resp = apiClient.lexue.getIcs(routed)
+            (resp.body() ?: resp.errorBody())?.string().orEmpty()
+        } catch (e: SchoolPageException) {
+            ""
+        }
     }
 
     private fun looksLikeCalendar(body: String): Boolean = body.contains("BEGIN:VCALENDAR")
@@ -138,4 +151,11 @@ class SyncAssignmentsUseCase @Inject constructor(
     private fun LexueUrlResult.Failed.toBackgroundFail(): BackgroundDdlResult =
         if (error is DdlSyncError.NetworkFail) BackgroundDdlResult.Transient
         else BackgroundDdlResult.Stop(error)
+}
+
+/** Nothing could be reached, or 乐学 alone could not (see [DdlSyncOutcome.lexueUnreachable]). */
+internal fun DdlSyncStep.unreachable(): Boolean = when (this) {
+    is DdlSyncStep.Failed -> error is DdlSyncError.NetworkFail
+    is DdlSyncStep.Done -> failed[DdlSource.LEXUE] is DdlSyncError.NetworkFail
+    else -> false
 }

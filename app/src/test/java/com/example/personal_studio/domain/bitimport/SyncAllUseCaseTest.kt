@@ -3,6 +3,10 @@ package com.example.personal_studio.domain.bitimport
 import com.example.personal_studio.data.local.datastore.ImportCredentialPrefs
 import com.example.personal_studio.data.local.datastore.SavedCredentials
 import com.example.personal_studio.data.network.bit.NetworkMode
+import com.example.personal_studio.data.network.bit.SchoolProblem
+import com.example.personal_studio.domain.bitddl.model.DdlSyncError
+import com.example.personal_studio.domain.bitexam.model.ExamSyncError
+import com.example.personal_studio.domain.bitimport.model.ImportError
 import com.example.personal_studio.domain.bitddl.SyncAssignmentsUseCase
 import com.example.personal_studio.domain.bitddl.model.DdlSyncStep
 import com.example.personal_studio.domain.bitexam.SyncExamsUseCase
@@ -21,6 +25,7 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
@@ -44,7 +49,7 @@ class SyncAllUseCaseTest {
     private fun stubCreds(creds: SavedCredentials?) {
         every { credPrefs.observeAll() } returns MutableStateFlow(creds)
         every { credPrefs.save(any(), any(), any()) } just Runs
-        coEvery { resolveMode.invoke(any()) } returns NetworkMode.LOCAL
+        coEvery { resolveMode.invoke(any(), any()) } returns NetworkMode.LOCAL
     }
 
     private fun stubAllOk() {
@@ -94,6 +99,40 @@ class SyncAllUseCaseTest {
         assertEquals(SyncFailure.VERIFY, last.states[SyncSource.EXAMS]?.failure)
         assertEquals(SyncFailure.REVIEW, last.states[SyncSource.GRADES]?.failure)
         assertEquals(setOf(SyncSource.EXAMS, SyncSource.GRADES), last.failed)
+    }
+
+    @Test fun `school pages become their own reasons instead of unexpected content`() = runTest {
+        stubCreds(SavedCredentials("u", "p", NetworkMode.LOCAL))
+        stubAllOk()
+        every { importCourses.importAuto(any(), any(), any()) } returns
+            flowOf(ImportStep.Failed(ImportError.School(SchoolProblem.SESSION_EXPIRED)))
+        every { syncAssignments.syncAuto(any(), any()) } returns
+            flowOf(DdlSyncStep.Failed(DdlSyncError.School(SchoolProblem.SERVER_BUSY)))
+        every { syncExams.syncAuto(any(), any()) } returns
+            flowOf(ExamSyncStep.Failed(ExamSyncError.School(SchoolProblem.UNEXPECTED_PAGE)))
+        every { syncGrades.syncAuto(any(), any()) } returns
+            flowOf(SyncGradesStep.Failed(GradesSyncError.School(SchoolProblem.WEBVPN_SIGN_IN)))
+
+        val last = useCase().run().toList().last()
+
+        assertEquals(SyncFailure.SESSION, last.states[SyncSource.COURSES]?.failure)
+        assertEquals(SyncFailure.BUSY, last.states[SyncSource.DDL]?.failure)
+        assertEquals(SyncFailure.OTHER, last.states[SyncSource.EXAMS]?.failure)
+        assertEquals(SyncFailure.GATEWAY, last.states[SyncSource.GRADES]?.failure)
+    }
+
+    @Test fun `teaching portal sources go direct while grades and assignments follow the probe`() = runTest {
+        stubCreds(SavedCredentials("u", "p", NetworkMode.LOCAL))
+        coEvery { resolveMode.invoke(any(), SchoolRoute.PUBLIC) } returns NetworkMode.LOCAL
+        coEvery { resolveMode.invoke(any(), SchoolRoute.CAMPUS) } returns NetworkMode.WEBVPN
+        stubAllOk()
+
+        useCase().run().toList()
+
+        verify { importCourses.importAuto(match { it.networkMode == NetworkMode.LOCAL }, any(), any()) }
+        verify { syncExams.syncAuto(match { it.networkMode == NetworkMode.LOCAL }, any()) }
+        verify { syncAssignments.syncAuto(match { it.networkMode == NetworkMode.WEBVPN }, any()) }
+        verify { syncGrades.syncAuto(match { it.networkMode == NetworkMode.WEBVPN }, any()) }
     }
 
     @Test fun `a thrown source counts as failed and the rest still run`() = runTest {

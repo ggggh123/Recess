@@ -24,6 +24,13 @@ class ResolveNetworkModeUseCaseTest {
         assertEquals(NetworkMode.LOCAL, ResolveNetworkModeUseCase(probe)(NetworkMode.WEBVPN))
     }
 
+    @Test fun `public teaching portal goes direct without probing`() = runTest {
+        val probe = mockk<CampusReachabilityProbe> { coEvery { localReachable() } returns false }
+        assertEquals(NetworkMode.LOCAL, ResolveNetworkModeUseCase(probe)(NetworkMode.WEBVPN, SchoolRoute.PUBLIC))
+        coVerify(exactly = 0) { probe.localReachable() }
+        assertEquals(NetworkMode.WEBVPN, ResolveNetworkModeUseCase(probe)(null, SchoolRoute.CAMPUS))
+    }
+
     @Test fun `WEBVPN stays WEBVPN when campus is unreachable`() = runTest {
         val probe = mockk<CampusReachabilityProbe> { coEvery { localReachable() } returns false }
         assertEquals(NetworkMode.WEBVPN, ResolveNetworkModeUseCase(probe)(NetworkMode.WEBVPN))

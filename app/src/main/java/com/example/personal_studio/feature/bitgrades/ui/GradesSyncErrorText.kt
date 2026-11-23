@@ -15,6 +15,7 @@ fun GradesSyncError.userMessage(): String = when (this) {
     GradesSyncError.NeedReview       -> "需先在教务系统完成评教才能查成绩"
     GradesSyncError.EmptyGrades      -> "教务系统成绩表为空，暂时没有可同步的成绩"
     is GradesSyncError.ParseFail     -> "解析失败：$message"
+    is GradesSyncError.School        -> problem.text
     is GradesSyncError.NetworkFail   -> "网络不可达：${cause.describe()}"
     is GradesSyncError.Unexpected    -> "出错了：${cause.describe()}"
 }

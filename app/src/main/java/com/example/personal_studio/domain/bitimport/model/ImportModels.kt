@@ -56,6 +56,8 @@ sealed class ImportError {
     object CaptchaRequired : ImportError()
     data class NetworkFail(val cause: Throwable) : ImportError()
     data class ParseFail(val message: String) : ImportError()
+    /** The school answered with a page that says why (sign-in needed, busy...). */
+    data class School(val problem: com.example.personal_studio.data.network.bit.SchoolProblem) : ImportError()
     object NoCurrentTerm : ImportError()
     object EmptySchedule : ImportError()
     data class Unexpected(val cause: Throwable) : ImportError()

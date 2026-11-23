@@ -9,6 +9,7 @@ import com.example.personal_studio.domain.bitddl.model.BackgroundDdlResult
 import com.example.personal_studio.domain.bitddl.model.DdlEvent
 import com.example.personal_studio.domain.bitddl.model.DdlSource
 import com.example.personal_studio.domain.bitddl.model.DdlSyncError
+import com.example.personal_studio.domain.bitddl.model.DdlSyncOutcome
 import com.example.personal_studio.domain.bitddl.model.DdlSyncRequest
 import com.example.personal_studio.domain.bitddl.model.DdlSyncStep
 import com.example.personal_studio.domain.bitddl.model.LexueUrlResult
@@ -20,8 +21,11 @@ import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.example.personal_studio.data.network.bit.SchoolPageException
+import com.example.personal_studio.data.network.bit.SchoolProblem
 import retrofit2.Response
 
 class SyncAssignmentsUseCaseTest {
@@ -70,6 +74,65 @@ class SyncAssignmentsUseCaseTest {
         assertTrue(r is BackgroundDdlResult.Stop)
         assertEquals(DdlSyncError.WrongCredentials, (r as BackgroundDdlResult.Stop).reason)
         assertEquals(DdlSyncError.WrongCredentials, outcome.accountStop)
+    }
+
+    @Test fun `乐学 alone unreachable on the probed route syncs again on the other one`() = runTest {
+        // On campus Wi-Fi with the route misjudged: WebVPN does not resolve, 乐学 does directly.
+        var mode = NetworkMode.WEBVPN
+        val lexue = mockk<BitLexueService> {
+            coEvery { getIcs(any()) } answers {
+                if (mode == NetworkMode.WEBVPN) throw java.net.UnknownHostException("webvpn.bit.edu.cn") else resp(ics)
+            }
+        }
+        val api = mockk<BitApiClient>(relaxed = true) {
+            coEvery { this@mockk.lexue } returns lexue
+            io.mockk.every { open(any()) } answers { mode = firstArg() }
+        }
+        val succeeded = mutableListOf<NetworkMode>()
+        val steps = useCase(api, prefs("URL"), eclass = eclass(BackgroundDdlResult.Ok(listOf(homework))))
+            .syncAuto(req().copy(networkMode = NetworkMode.WEBVPN)) { succeeded += it }.toList()
+        assertEquals(DdlSyncStep.SwitchingMode(NetworkMode.LOCAL), steps.first { it is DdlSyncStep.SwitchingMode })
+        val done = steps.last() as DdlSyncStep.Done
+        assertEquals(mapOf(DdlSource.LEXUE to 1, DdlSource.ECLASS to 1), done.counts)
+        assertEquals(emptyMap<DdlSource, DdlSyncError>(), done.failed)
+        assertEquals(listOf(NetworkMode.LOCAL), succeeded)
+        // The first route's partial result is not shown as the outcome.
+        assertEquals(1, steps.count { it is DdlSyncStep.Done })
+    }
+
+    @Test fun `what counts as unreachable for the route fallback`() {
+        assertTrue(DdlSyncStep.Failed(DdlSyncError.NetworkFail("x")).unreachable())
+        assertTrue(DdlSyncStep.Done(1, 0, failed = mapOf(DdlSource.LEXUE to DdlSyncError.NetworkFail("x"))).unreachable())
+        // 新乐学 is public: its failure says nothing about the route.
+        assertFalse(DdlSyncStep.Done(1, 0, failed = mapOf(DdlSource.ECLASS to DdlSyncError.NetworkFail("x"))).unreachable())
+        assertFalse(DdlSyncStep.Done(1, 0, failed = mapOf(DdlSource.LEXUE to DdlSyncError.CaptchaRequired)).unreachable())
+        assertFalse(DdlSyncStep.Failed(DdlSyncError.WrongCredentials).unreachable())
+    }
+
+    @Test fun `merging two routes keeps answers over connection failures`() {
+        val first = DdlSyncOutcome(mapOf(DdlSource.LEXUE to BackgroundDdlResult.Transient, DdlSource.ECLASS to BackgroundDdlResult.Ok(listOf(homework))))
+        val second = DdlSyncOutcome(mapOf(DdlSource.LEXUE to BackgroundDdlResult.Ok(emptyList()), DdlSource.ECLASS to BackgroundDdlResult.Transient))
+        val merged = first.then(second)
+        assertEquals(BackgroundDdlResult.Ok(emptyList()), merged.bySource[DdlSource.LEXUE])
+        assertEquals(BackgroundDdlResult.Ok(listOf(homework)), merged.bySource[DdlSource.ECLASS])
+        assertTrue(first.lexueUnreachable)
+        assertFalse(merged.lexueUnreachable)
+        // A later real answer replaces an earlier one.
+        val stop = DdlSyncOutcome(mapOf(DdlSource.LEXUE to BackgroundDdlResult.Stop(DdlSyncError.CaptchaRequired)))
+        assertEquals(BackgroundDdlResult.Stop(DdlSyncError.CaptchaRequired), merged.then(stop).bySource[DdlSource.LEXUE])
+    }
+
+    @Test fun `a WebVPN that is not signed in re-derives through a sign-in`() = runTest {
+        val lexue = mockk<BitLexueService> {
+            coEvery { getIcs("OLD") } throws SchoolPageException(SchoolProblem.WEBVPN_SIGN_IN, "webvpn.bit.edu.cn/fingerprint")
+            coEvery { getIcs("NEW") } returns resp(ics)
+        }
+        val api = mockk<BitApiClient>(relaxed = true) { coEvery { this@mockk.lexue } returns lexue }
+        val gen = mockk<GenerateLexueIcalUrlUseCase>()
+        coEvery { gen.invoke(any()) } returns LexueUrlResult.Ok("NEW")
+        val r = useCase(api, prefs("OLD"), gen).syncForBackground(req()).bySource[DdlSource.LEXUE]
+        assertTrue(r is BackgroundDdlResult.Ok)
+        coVerify(exactly = 1) { gen.invoke(any()) }
     }
 
     @Test fun `stale url re-derives once then Ok`() = runTest {

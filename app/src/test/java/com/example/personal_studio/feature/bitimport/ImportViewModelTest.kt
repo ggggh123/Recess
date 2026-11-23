@@ -35,7 +35,7 @@ class ImportViewModelTest {
     /** resolve mock:回显 LOCAL(测试都用 LOCAL),不触发探测。 */
     private fun resolveEcho(): ResolveNetworkModeUseCase {
         val m = mockk<ResolveNetworkModeUseCase>()
-        coEvery { m.invoke(any()) } returns NetworkMode.LOCAL
+        coEvery { m.invoke(any(), any()) } returns NetworkMode.LOCAL
         return m
     }
 

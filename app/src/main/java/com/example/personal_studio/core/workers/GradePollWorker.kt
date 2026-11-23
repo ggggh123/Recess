@@ -146,6 +146,7 @@ class GradePollWorker @AssistedInject constructor(
         GradesSyncError.NeedReview -> "需先完成评教"
         GradesSyncError.EmptyGrades -> "未查到成绩"
         is GradesSyncError.ParseFail -> "教务返回异常,已停轮"
+        is GradesSyncError.School -> "${e.problem.text},已停轮"
         is GradesSyncError.NetworkFail -> "网络不可达"
         is GradesSyncError.Unexpected -> "未知错误,已停轮"
     }

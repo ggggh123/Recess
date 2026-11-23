@@ -4,6 +4,8 @@ import com.example.personal_studio.BuildConfig
 import com.example.personal_studio.data.network.bit.BitCookieJar
 import com.example.personal_studio.data.network.bit.BitBrowserCookieInterceptor
 import com.example.personal_studio.data.network.bit.BitBrowserHeaders
+import com.example.personal_studio.data.network.bit.BitTrace
+import com.example.personal_studio.data.network.bit.SchoolPageGuard
 import com.example.personal_studio.data.network.bit.origin
 import android.util.Log
 import dagger.Module
@@ -23,6 +25,7 @@ object BitNetworkModule {
     @Singleton
     @Named("bit")
     fun provideBitOkHttp(cookieJar: BitCookieJar, browserCookies: BitBrowserCookieInterceptor): OkHttpClient {
+        BitTrace.sink = { Log.i("BitTrace", it) }
         val builder = OkHttpClient.Builder()
             .cookieJar(cookieJar)
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -43,7 +46,10 @@ object BitNetworkModule {
                     .build()
                 chain.proceed(request)
             }
+            .addInterceptor(BitTrace.finals)
+            .addInterceptor(SchoolPageGuard())
             .addNetworkInterceptor(browserCookies)
+            .addNetworkInterceptor(BitTrace.hops)
         if (BuildConfig.DEBUG) {
             builder.addInterceptor { chain ->
                 val request = chain.request()

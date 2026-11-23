@@ -7,5 +7,9 @@ sealed class CasLoginDto {
     object WrongCredentials : CasLoginDto()
     object AccountLocked : CasLoginDto()
     object CaptchaRequired : CasLoginDto()
-    data class UnknownFailure(val body: String) : CasLoginDto()
+    /** [body] is a log-safe stage description; [problem] is set when the reason is known. */
+    data class UnknownFailure(
+        val body: String,
+        val problem: com.example.personal_studio.data.network.bit.SchoolProblem? = null,
+    ) : CasLoginDto()
 }

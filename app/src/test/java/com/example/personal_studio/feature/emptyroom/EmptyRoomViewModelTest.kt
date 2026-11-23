@@ -84,7 +84,7 @@ class EmptyRoomViewModelTest {
         creds: SavedCredentials? = SavedCredentials("u", "p", NetworkMode.LOCAL),
     ): EmptyRoomViewModel {
         val credPrefs = mockk<ImportCredentialPrefs>(relaxed = true) { every { observeAll() } returns MutableStateFlow(creds) }
-        val resolve = mockk<ResolveNetworkModeUseCase> { coEvery { this@mockk.invoke(any()) } returns NetworkMode.LOCAL }
+        val resolve = mockk<ResolveNetworkModeUseCase> { coEvery { this@mockk.invoke(any(), any()) } returns NetworkMode.LOCAL }
         val timetable = mockk<TimetablePreferences> { every { periods } returns flowOf(DefaultTimetable.PERIODS) }
         return EmptyRoomViewModel(repo, credPrefs, resolve, prefs, timetable, nowProvider = { now })
     }

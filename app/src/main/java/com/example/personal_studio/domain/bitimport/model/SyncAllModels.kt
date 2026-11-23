@@ -17,6 +17,12 @@ enum class SyncFailure {
     NETWORK,
     /** The school returned nothing; local data was left untouched. */
     EMPTY,
+    /** WebVPN, the off-campus channel, kept showing its own sign-in or device check. */
+    GATEWAY,
+    /** The school's sign-in had ended by the time the data was asked for. */
+    SESSION,
+    /** The school answered with server errors (5xx, "系统繁忙"). */
+    BUSY,
     OTHER,
 }
 

@@ -1,5 +1,6 @@
 package com.example.personal_studio.feature.bitimport
 
+import com.example.personal_studio.domain.bitimport.SchoolRoute
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.personal_studio.data.local.datastore.ImportCredentialPrefs
@@ -97,7 +98,7 @@ class ImportViewModel @Inject constructor(
         val st = _uiState.value
         viewModelScope.launch {
             // 校内优先:lastMode=WEBVPN(种进 st.networkMode)时先探一次校内,在校园网下自动脱离"粘校外"。
-            val firstMode = resolveNetworkMode(st.networkMode)
+            val firstMode = resolveNetworkMode(st.networkMode, SchoolRoute.PUBLIC)
             val req = ImportRequest(
                 credentials = ImportCredentials(st.username, st.password),
                 networkMode = firstMode,

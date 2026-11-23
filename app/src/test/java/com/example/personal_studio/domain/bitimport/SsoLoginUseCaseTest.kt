@@ -5,6 +5,7 @@ import com.example.personal_studio.data.network.bit.BitAuthUrls
 import com.example.personal_studio.data.network.bit.BitBrowserHeaders
 import com.example.personal_studio.data.network.bit.BitCookieJar
 import com.example.personal_studio.data.network.bit.NetworkMode
+import com.example.personal_studio.data.network.bit.SchoolProblem
 import com.example.personal_studio.data.network.bit.dto.CasInitDto
 import com.example.personal_studio.data.network.bit.dto.CasLoginDto
 import com.example.personal_studio.data.network.bit.origin
@@ -79,10 +80,12 @@ class SsoLoginUseCaseTest {
             .addHeader("Set-Cookie", "TGC=trusted; Path=/cas"))
     }
 
+    /** A gateway whose device check is already answered: its entry points at CAS, and the
+     * ticket is accepted with a redirect that is not followed. */
     private fun gatewayTicket() {
+        vpn.enqueue(redirect(casUrl("/cas/login?service=gateway")))
         cas.enqueue(redirect(vpnUrl("/login?cas_login=true&ticket=ST-gateway")))
         vpn.enqueue(redirect("/home").addHeader("Set-Cookie", "SESSION=gateway; Path=/"))
-        vpn.enqueue(success())
     }
 
     @Test fun `parses BIT text and input forms`() {
@@ -101,7 +104,9 @@ class SsoLoginUseCaseTest {
         assertEquals(CasLoginDto.Success, sso.loginGrades(api, "student", "password"))
         assertEquals(0, portal.requestCount)
         val requests = (1..5).map { vpn.takeRequest() }
-        assertEquals("ST-gateway", requests[0].requestUrl!!.queryParameter("ticket"))
+        assertEquals("/login", requests[0].requestUrl!!.encodedPath)
+        assertNull(requests[0].requestUrl!!.queryParameter("ticket"))
+        assertEquals("ST-gateway", requests[1].requestUrl!!.queryParameter("ticket"))
         assertEquals("/https/campus/", requests[2].requestUrl!!.encodedPath)
         assertNull(requests[2].requestUrl!!.queryParameter("ticket"))
         assertEquals("ST-target", requests[3].requestUrl!!.queryParameter("ticket"))
@@ -238,10 +243,12 @@ class SsoLoginUseCaseTest {
     }
     @Test fun `gateway failure cannot be mistaken for target success`() = runBlocking {
         passwordTicket()
+        vpn.enqueue(redirect(casUrl("/cas/login?service=gateway")))
         cas.enqueue(redirect(vpnUrl("/login?cas_login=true&ticket=ST-gateway")))
         vpn.enqueue(MockResponse().setResponseCode(502))
-        assertTrue(sso.loginGrades(api, "student", "pw") is CasLoginDto.UnknownFailure)
-        assertEquals(1, vpn.requestCount)
+        val result = sso.loginGrades(api, "student", "pw")
+        assertEquals(SchoolProblem.SERVER_BUSY, (result as CasLoginDto.UnknownFailure).problem)
+        assertEquals(2, vpn.requestCount)
         assertEquals(0, portal.requestCount)
     }
     @Test fun `target callback landing on expired session is not success`() = runBlocking {
@@ -250,7 +257,90 @@ class SsoLoginUseCaseTest {
         vpn.enqueue(MockResponse().setBody("<script>alert('该帐号不存在或密码错误')</script>"))
         assertEquals(CasLoginDto.CaptchaRequired, sso.loginGrades(api, "student", "pw"))
     }
-    @Test fun `public lexue service does not depend on teaching portal or VPN`() = runBlocking {
+    @Test fun `new gateway session answers the device check before its ticket is redeemed`() = runBlocking {
+        passwordTicket()
+        vpn.enqueue(redirect("/fingerprint"))
+        vpn.enqueue(MockResponse().setBody("<script>FingerprintJS.load()</script>"))
+        vpn.enqueue(redirect("/login"))
+        cas.enqueue(redirect(vpnUrl("/login?cas_login=true&ticket=ST-gateway")))
+        vpn.enqueue(redirect("/"))
+        vpn.enqueue(success()) // jwms root
+        vpn.enqueue(success()) // target callback
+        assertEquals(CasLoginDto.Success, sso.loginGrades(api, "student", "pw"))
+        val urls = (1..6).map { vpn.takeRequest().requestUrl!! }
+        assertEquals(listOf("/login", "/fingerprint", "/set-fingerprint", "/login"), urls.take(4).map { it.encodedPath })
+        val id = urls[2].queryParameter("fingerprint")!!
+        assertTrue(id, Regex("[0-9a-f]{32}").matches(id))
+        assertEquals(api.webVpnFingerprint(), id)
+        assertNull(urls[0].queryParameter("ticket"))
+        assertEquals("ST-gateway", urls[3].queryParameter("ticket"))
+        assertEquals("ST-target", urls[5].queryParameter("ticket"))
+    }
+
+    @Test fun `ticket dropped on the way to the device check is retried once with a fresh one`() = runBlocking {
+        passwordTicket()
+        vpn.enqueue(redirect(casUrl("/cas/login?service=gateway")))
+        cas.enqueue(redirect(vpnUrl("/login?cas_login=true&ticket=ST-1")))
+        vpn.enqueue(redirect("/fingerprint")) // the ticket is lost
+        vpn.enqueue(redirect("/fingerprint"))
+        vpn.enqueue(MockResponse().setBody("<script>FingerprintJS.load()</script>"))
+        vpn.enqueue(redirect("/login"))
+        cas.enqueue(redirect(vpnUrl("/login?cas_login=true&ticket=ST-2")))
+        vpn.enqueue(redirect("/"))
+        vpn.enqueue(success()); vpn.enqueue(success())
+        assertEquals(CasLoginDto.Success, sso.loginGrades(api, "student", "pw"))
+        assertEquals(4, cas.requestCount) // login page, password, two gateway tickets
+    }
+
+    @Test fun `a gateway that keeps asking for the device check ends as a WebVPN sign-in problem`() = runBlocking {
+        passwordTicket()
+        repeat(2) { n ->
+            vpn.enqueue(redirect(casUrl("/cas/login?service=gateway")))
+            cas.enqueue(redirect(vpnUrl("/login?cas_login=true&ticket=ST-$n")))
+            vpn.enqueue(redirect("/fingerprint"))
+        }
+        val result = sso.loginGrades(api, "student", "pw")
+        assertEquals(SchoolProblem.WEBVPN_SIGN_IN, (result as CasLoginDto.UnknownFailure).problem)
+        assertEquals(4, vpn.requestCount)
+        assertEquals(0, portal.requestCount)
+    }
+
+    @Test fun `the page the gateway goes on to after signing in is not followed`() = runBlocking {
+        passwordTicket()
+        vpn.enqueue(redirect(casUrl("/cas/login?service=gateway")))
+        cas.enqueue(redirect(vpnUrl("/login?cas_login=true&ticket=ST-gateway")))
+        // A remembered, long-expired callback that would end in an error page.
+        vpn.enqueue(redirect("/https/stale/auth-protocol-core/loginSuccess?ticket=old"))
+        vpn.enqueue(success()); vpn.enqueue(success())
+        assertEquals(CasLoginDto.Success, sso.loginGrades(api, "student", "pw"))
+        val paths = (1..4).map { vpn.takeRequest().requestUrl!!.encodedPath }
+        assertFalse(paths.toString(), paths.any { "stale" in it })
+    }
+
+    @Test fun `target callback bounced to the gateway's device check is reported as such`() = runBlocking {
+        passwordTicket(); gatewayTicket()
+        vpn.enqueue(success()) // jwms root
+        vpn.enqueue(redirect("/login"))
+        vpn.enqueue(redirect("/fingerprint"))
+        vpn.enqueue(MockResponse().setBody("<script>FingerprintJS.load()</script>"))
+        val result = sso.loginGrades(api, "student", "pw")
+        assertEquals(SchoolProblem.WEBVPN_SIGN_IN, (result as CasLoginDto.UnknownFailure).problem)
+    }
+
+    @Test fun `off campus lexue signs the gateway in and redeems its ticket through it`() = runBlocking {
+        passwordTicket(portalUrl("/login/index.php"))
+        gatewayTicket()
+        vpn.enqueue(success())
+        assertEquals(CasLoginDto.Success, sso.loginLexue(api, "student", "pw"))
+        assertEquals(0, portal.requestCount)
+        repeat(2) { vpn.takeRequest() }
+        val callback = vpn.takeRequest().requestUrl!!
+        assertEquals("/https/campus/login/index.php", callback.encodedPath)
+        assertEquals("ST-target", callback.queryParameter("ticket"))
+    }
+
+    @Test fun `on campus lexue service does not depend on teaching portal or VPN`() = runBlocking {
+        api.open(NetworkMode.LOCAL)
         passwordTicket(portalUrl("/login/index.php"))
         portal.enqueue(success())
         assertEquals(CasLoginDto.Success, sso.loginLexue(api, "student", "pw"))

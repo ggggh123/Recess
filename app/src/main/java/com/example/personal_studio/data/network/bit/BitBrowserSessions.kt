@@ -24,8 +24,18 @@ class BitBrowserSessions @Inject constructor(@ApplicationContext context: Contex
         cookies.setAcceptCookie(true)
         if (prefs.getString("owner", null) != username) {
             clearCookies(cookies)
-            prefs.edit().putString("owner", username).apply()
+            prefs.edit().remove(FINGERPRINT).putString("owner", username).apply()
         }
+    }
+
+    /**
+     * This app's device id for WebVPN's device check, which a browser derives from FingerprintJS.
+     * Random (32 hex digits, like a FingerprintJS visitor id), kept with the cookies and renewed
+     * when they are cleared, so the gateway sees one stable browser rather than a new one per sync.
+     */
+    @Synchronized
+    fun webVpnFingerprint(): String = prefs.getString(FINGERPRINT, null) ?: newFingerprint().also {
+        prefs.edit().putString(FINGERPRINT, it).apply()
     }
 
     suspend fun clear() = withContext(Dispatchers.Main.immediate) {
@@ -55,6 +65,11 @@ class BitBrowserSessions @Inject constructor(@ApplicationContext context: Contex
     }
 
     companion object {
+        private const val FINGERPRINT = "webvpn_fingerprint"
+
+        fun newFingerprint(random: java.util.Random = java.security.SecureRandom()): String =
+            ByteArray(16).also(random::nextBytes).joinToString("") { "%02x".format(it) }
+
         fun isSchoolHost(url: HttpUrl): Boolean = url.host == "bit.edu.cn" || url.host.endsWith(".bit.edu.cn")
     }
 }

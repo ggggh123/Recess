@@ -65,6 +65,14 @@ object BitAuthPages {
         return html.substring(tag.range.last + 1).substringBefore('<').trim().takeIf { it.isNotEmpty() }
     }
 
+    /** Log-safe markers of a CAS page: which forms and error codes it carries, never values a person typed. */
+    fun describe(html: String): String {
+        val marks = listOf("secondSmsLoginForm", "second-auth-tip", "smsLoginForm", "normalLoginForm", "cas-gateway", "captcha")
+            .filter { html.contains(it, ignoreCase = true) }
+        val code = idText(html, "login-error-code")
+        return (marks + listOfNotNull(code?.let { "code=$it" })).joinToString(",").ifEmpty { "无已知标记" }
+    }
+
     fun hasGradeTable(html: String): Boolean = Regex(
         """<table\b[^>]*\bid\s*=\s*["']dataList["']""", RegexOption.IGNORE_CASE,
     ).containsMatchIn(html)

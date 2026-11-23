@@ -28,6 +28,8 @@ sealed class GradesSyncError {
     object CaptchaRequired : GradesSyncError()
     data class NetworkFail(val cause: Throwable) : GradesSyncError()
     data class ParseFail(val message: String) : GradesSyncError()
+    /** The school answered with a page that says why (sign-in needed, busy...). */
+    data class School(val problem: com.example.personal_studio.data.network.bit.SchoolProblem) : GradesSyncError()
     object EmptyGrades : GradesSyncError()
     /** 正方教务把成绩藏在评教后面——需先在教务系统完成评教才能查分。 */
     object NeedReview : GradesSyncError()

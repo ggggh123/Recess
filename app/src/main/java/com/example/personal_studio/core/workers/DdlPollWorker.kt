@@ -61,15 +61,17 @@ class DdlPollWorker @AssistedInject constructor(
         return try {
             for (mode in listOf(first, otherMode(first))) {
                 apiClient.open(mode)
-                outcome = try {
+                val attempt = try {
                     sync.syncForBackground(DdlSyncRequest(creds.username, creds.password, mode, true))
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Throwable) {
                     allTransient
                 }
+                // Keeps what the first route got; 乐学 alone unreachable also tries the other route.
+                outcome = outcome.then(attempt)
                 usedMode = mode
-                if (outcome.bySource.values.any { it !is BackgroundDdlResult.Transient }) break
+                if (!outcome.lexueUnreachable && outcome.bySource.values.any { it !is BackgroundDdlResult.Transient }) break
                 apiClient.close()
             }
             handle(outcome, creds, usedMode)
@@ -119,6 +121,7 @@ class DdlPollWorker @AssistedInject constructor(
         DdlSyncError.CaptchaRequired -> "学校要求验证"
         DdlSyncError.NeedReview -> "需先完成评教"
         is DdlSyncError.NetworkFail -> "网络不可达"
+        is DdlSyncError.School -> e.problem.text
         else -> "返回异常"
     }
 
@@ -128,6 +131,7 @@ class DdlPollWorker @AssistedInject constructor(
         DdlSyncError.CaptchaRequired -> "需验证码,已停轮"
         DdlSyncError.NeedReview -> "需先完成评教"
         is DdlSyncError.ParseFail -> "作业平台返回异常,已停轮"
+        is DdlSyncError.School -> "${e.problem.text},已停轮"
         is DdlSyncError.NetworkFail -> "网络不可达"
         is DdlSyncError.Unexpected -> "未知错误,已停轮"
     }

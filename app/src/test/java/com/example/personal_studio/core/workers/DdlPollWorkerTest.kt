@@ -42,7 +42,7 @@ class DdlPollWorkerTest {
 
     private fun resolveLocal(): ResolveNetworkModeUseCase {
         val m = mockk<ResolveNetworkModeUseCase>()
-        coEvery { m.invoke(any()) } returns NetworkMode.LOCAL
+        coEvery { m.invoke(any(), any()) } returns NetworkMode.LOCAL
         return m
     }
 
@@ -98,6 +98,25 @@ class DdlPollWorkerTest {
         coVerify { pollPrefs.setEnabled(false) }
         coVerify { scheduler.cancel() }
         coVerify { notifier.notifyStop(any(), DdlSyncError.WrongCredentials) }
+    }
+
+    @Test fun `乐学 alone unreachable tries the other route and keeps what the first one got`() = runTest {
+        val pollPrefs = mockk<DdlSyncPrefs>(relaxed = true) { coEvery { snapshot() } returns enabled() }
+        val credPrefs = mockk<ImportCredentialPrefs>(relaxed = true) {
+            every { observeAll() } returns MutableStateFlow(creds())
+        }
+        val sync = mockk<SyncAssignmentsUseCase> {
+            coEvery { syncForBackground(match { it.networkMode == NetworkMode.LOCAL }) } returns
+                outcome(BackgroundDdlResult.Transient, BackgroundDdlResult.Ok(listOf(ev("e"))))
+            coEvery { syncForBackground(match { it.networkMode == NetworkMode.WEBVPN }) } returns
+                outcome(BackgroundDdlResult.Ok(listOf(ev("l"))), BackgroundDdlResult.Transient)
+        }
+        val replacer = mockk<ReplaceImportedDdlUseCase>(relaxed = true)
+        val r = worker(pollPrefs, credPrefs, sync, replacer = replacer).doWork()
+        assertEquals(ListenableWorker.Result.success(), r)
+        coVerify(exactly = 2) { sync.syncForBackground(any()) }
+        coVerify { replacer.invoke(DdlSource.LEXUE, listOf(ev("l")), any()) }
+        coVerify { replacer.invoke(DdlSource.ECLASS, listOf(ev("e")), any()) }
     }
 
     @Test fun `transient returns retry`() = runTest {

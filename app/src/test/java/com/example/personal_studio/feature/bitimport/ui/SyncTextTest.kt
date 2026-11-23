@@ -32,4 +32,17 @@ class SyncTextTest {
         assertFalse(SyncText.needsLogin(SyncFailure.NETWORK))
         assertEquals("需要先在教务系统完成评教", SyncText.failure(SyncFailure.REVIEW))
     }
+
+    @Test fun `school-side reasons say what happened and what to do`() {
+        assertEquals("登录已过期，请重新登录", SyncText.failure(SyncFailure.SESSION))
+        assertEquals("校外访问需要先验证", SyncText.failure(SyncFailure.GATEWAY))
+        assertEquals("学校系统繁忙或正在维护，请稍后再试", SyncText.failure(SyncFailure.BUSY))
+        assertTrue(SyncText.needsLogin(SyncFailure.SESSION))
+        assertTrue(SyncText.needsLogin(SyncFailure.GATEWAY))
+        assertFalse(SyncText.needsLogin(SyncFailure.BUSY))
+        assertEquals("去验证", SyncText.loginAction(SyncFailure.GATEWAY))
+        assertEquals("去验证", SyncText.loginAction(SyncFailure.VERIFY))
+        assertEquals("重新登录", SyncText.loginAction(SyncFailure.SESSION))
+        assertEquals("重新登录", SyncText.loginAction(SyncFailure.PASSWORD))
+    }
 }

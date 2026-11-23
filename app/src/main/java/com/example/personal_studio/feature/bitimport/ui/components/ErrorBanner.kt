@@ -1,5 +1,6 @@
 package com.example.personal_studio.feature.bitimport.ui.components
 
+import com.example.personal_studio.data.network.bit.SchoolProblem
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -26,6 +27,12 @@ internal fun importErrorText(error: ImportError): ImportErrorText = when (error)
     is ImportError.ParseFail -> ImportErrorText("没能读懂课表", "教务系统返回了意料之外的内容（${error.message}），可能是接口改版了。", "反馈问题", BannerAction.OpenIssueTracker)
     is ImportError.NoCurrentTerm -> ImportErrorText("学校没有返回当前学期", "可能正处于学期之间，稍后再试。", "重试", BannerAction.Retry)
     is ImportError.EmptySchedule -> ImportErrorText("这学期没有课", "教务系统里这个学期还没有排课。", "重试", BannerAction.Retry)
+    is ImportError.School -> when (error.problem) {
+        SchoolProblem.WEBVPN_SIGN_IN -> ImportErrorText("校外访问需要验证", "WebVPN 没有登录成功，请重新验证后再导入。", "去验证", BannerAction.Reauthenticate)
+        SchoolProblem.SESSION_EXPIRED -> ImportErrorText("登录已过期", "学校的登录状态已经失效，请重新登录学校账户。", "重新登录", BannerAction.Reauthenticate)
+        SchoolProblem.SERVER_BUSY -> ImportErrorText("学校系统繁忙", "教务系统暂时没有正常响应，可能正在维护，请稍后再试。", "重试", BannerAction.Retry)
+        SchoolProblem.UNEXPECTED_PAGE -> ImportErrorText("没能读到课表", "教务系统返回了意外的页面，可能正在维护，请稍后再试。", "重试", BannerAction.Retry)
+    }
     is ImportError.Unexpected -> ImportErrorText("导入失败", error.cause.message ?: "出现了未知错误。", "反馈问题", BannerAction.OpenIssueTracker)
 }
 

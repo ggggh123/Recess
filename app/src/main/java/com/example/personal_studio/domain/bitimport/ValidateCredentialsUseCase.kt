@@ -24,7 +24,7 @@ class ValidateCredentialsUseCase @Inject constructor(
                 CasLoginDto.WrongCredentials -> LoginOutcome.WrongCredentials
                 CasLoginDto.AccountLocked -> LoginOutcome.AccountLocked
                 CasLoginDto.CaptchaRequired -> LoginOutcome.CaptchaRequired
-                is CasLoginDto.UnknownFailure -> LoginOutcome.Unexpected(dto.body)
+                is CasLoginDto.UnknownFailure -> LoginOutcome.Unexpected(dto.problem?.text ?: dto.body)
             }
         } catch (io: java.io.IOException) {
             LoginOutcome.NetworkFail(io.message ?: "io")

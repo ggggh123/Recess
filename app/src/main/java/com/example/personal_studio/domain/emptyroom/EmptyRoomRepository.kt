@@ -114,6 +114,6 @@ class EmptyRoomRepository @Inject constructor(
         CasLoginDto.WrongCredentials -> EmptyRoomError.WrongCredentials
         CasLoginDto.AccountLocked -> EmptyRoomError.WrongCredentials
         CasLoginDto.CaptchaRequired -> EmptyRoomError.Parse("请到校园页点“重新验证”，并完成应用内的学校网页验证")
-        is CasLoginDto.UnknownFailure -> EmptyRoomError.Parse("CAS: $body")
+        is CasLoginDto.UnknownFailure -> EmptyRoomError.Parse(problem?.text ?: "CAS: $body")
     }
 }

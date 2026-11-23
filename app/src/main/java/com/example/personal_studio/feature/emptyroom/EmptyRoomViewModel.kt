@@ -1,5 +1,6 @@
 package com.example.personal_studio.feature.emptyroom
 
+import com.example.personal_studio.domain.bitimport.SchoolRoute
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.personal_studio.core.util.DefaultTimetable
@@ -291,7 +292,7 @@ class EmptyRoomViewModel @Inject constructor(
         onNetworkError: () -> Unit,
         block: suspend (term: String) -> Unit,
     ) {
-        val firstMode = resolveNetworkMode(creds.lastMode)
+        val firstMode = resolveNetworkMode(creds.lastMode, SchoolRoute.PUBLIC)
         var loginErr: EmptyRoomError? = null
         try {
             withSessionAutoFallback(

@@ -51,7 +51,8 @@ class FetchEclassAssignmentsUseCase @Inject constructor(
                 CasLoginDto.WrongCredentials -> BackgroundDdlResult.Stop(DdlSyncError.WrongCredentials)
                 CasLoginDto.AccountLocked -> BackgroundDdlResult.Stop(DdlSyncError.AccountLocked)
                 CasLoginDto.CaptchaRequired -> BackgroundDdlResult.Stop(DdlSyncError.CaptchaRequired)
-                is CasLoginDto.UnknownFailure -> BackgroundDdlResult.Stop(DdlSyncError.ParseFail(login.body))
+                is CasLoginDto.UnknownFailure ->
+                    BackgroundDdlResult.Stop(login.problem?.let { DdlSyncError.School(it) } ?: DdlSyncError.ParseFail(login.body))
             }
         }
     } catch (e: CancellationException) {

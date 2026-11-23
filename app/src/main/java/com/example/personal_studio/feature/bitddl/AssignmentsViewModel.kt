@@ -142,6 +142,7 @@ class AssignmentsViewModel @Inject constructor(
         is DdlSyncError.CaptchaRequired -> "请到校园页点“重新验证”，并完成应用内的学校网页验证"
         is DdlSyncError.NeedReview -> "请先完成评教"
         is DdlSyncError.ParseFail -> "平台返回异常"
+        is DdlSyncError.School -> problem.text
         is DdlSyncError.NetworkFail -> "网络错误,请重试"
         is DdlSyncError.Unexpected -> "未知错误"
     }

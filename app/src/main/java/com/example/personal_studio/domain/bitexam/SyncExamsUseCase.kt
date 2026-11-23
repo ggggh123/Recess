@@ -1,5 +1,6 @@
 package com.example.personal_studio.domain.bitexam
 
+import com.example.personal_studio.data.network.bit.SchoolPageException
 import com.example.personal_studio.data.network.bit.BitApiClient
 import com.example.personal_studio.data.network.bit.NetworkMode
 import com.example.personal_studio.data.network.bit.autoNetworkFallback
@@ -56,6 +57,8 @@ class SyncExamsUseCase @Inject constructor(
             val exams = rows.mapNotNull { mapper.invoke(it, term) }
             replacer.invoke(exams)
             emit(ExamSyncStep.Done(exams.size))
+        } catch (e: SchoolPageException) {
+            emit(ExamSyncStep.Failed(ExamSyncError.School(e.problem)))
         } catch (io: IOException) {
             emit(ExamSyncStep.Failed(ExamSyncError.NetworkFail(io.message ?: "io")))
         } catch (e: CancellationException) {
@@ -83,6 +86,6 @@ class SyncExamsUseCase @Inject constructor(
         CasLoginDto.WrongCredentials -> ExamSyncError.WrongCredentials
         CasLoginDto.AccountLocked -> ExamSyncError.AccountLocked
         CasLoginDto.CaptchaRequired -> ExamSyncError.CaptchaRequired
-        is CasLoginDto.UnknownFailure -> ExamSyncError.ParseFail("CAS: $body")
+        is CasLoginDto.UnknownFailure -> problem?.let { ExamSyncError.School(it) } ?: ExamSyncError.ParseFail("CAS: $body")
     }
 }

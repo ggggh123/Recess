@@ -18,6 +18,9 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.example.personal_studio.data.network.bit.SchoolPageException
+import com.example.personal_studio.data.network.bit.SchoolProblem
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import retrofit2.Response
 
 class GenerateLexueIcalUrlUseCaseTest {
@@ -44,6 +47,38 @@ class GenerateLexueIcalUrlUseCaseTest {
             "https://lexue.bit.edu.cn/calendar/export_execute.php?userid=1&authtoken=t&preset_what=all",
             GenerateLexueIcalUrlUseCase.extractIcalUrl(html),
         )
+    }
+
+    @Test fun `a path-only address, as WebVPN may rewrite it, is resolved against the page`() {
+        val page = "https://webvpn.bit.edu.cn/https/77726476706e69737468656265737421fcf25989227e6a596a468ca88d1b203b/calendar/export.php"
+            .toHttpUrl()
+        val html = """<a href="/https/77726476706e69737468656265737421fcf25989227e6a596a468ca88d1b203b/calendar/export_execute.php?authtoken=t&amp;userid=1">"""
+        assertEquals(
+            "https://webvpn.bit.edu.cn/https/77726476706e69737468656265737421fcf25989227e6a596a468ca88d1b203b/calendar/export_execute.php?authtoken=t&userid=1",
+            GenerateLexueIcalUrlUseCase.extractIcalUrl(html, page),
+        )
+        assertEquals(null, GenerateLexueIcalUrlUseCase.extractIcalUrl(html))
+    }
+
+    @Test fun `an address shown through WebVPN is kept as lexue's own`() = runTest {
+        val lexue = mockk<BitLexueService> {
+            coEvery { getIndexHtml() } returns ok("""x"sesskey":"KEY1"x""")
+            coEvery { exportCalendar(any(), any(), any(), any(), any()) } returns ok(
+                """<div>https://webvpn.bit.edu.cn/https/77726476706e69737468656265737421fcf25989227e6a596a468ca88d1b203b/calendar/export_execute.php?authtoken=T</div>""",
+            )
+        }
+        val api = mockk<BitApiClient>(relaxed = true) { coEvery { this@mockk.lexue } returns lexue }
+        val r = GenerateLexueIcalUrlUseCase(api, ssoReturning(CasLoginDto.Success)).invoke(req())
+        assertEquals("https://lexue.bit.edu.cn/calendar/export_execute.php?authtoken=T", (r as LexueUrlResult.Ok).url)
+    }
+
+    @Test fun `a bounced export page fails with its reason`() = runTest {
+        val lexue = mockk<BitLexueService> {
+            coEvery { getIndexHtml() } throws SchoolPageException(SchoolProblem.WEBVPN_SIGN_IN, "webvpn.bit.edu.cn/fingerprint")
+        }
+        val api = mockk<BitApiClient>(relaxed = true) { coEvery { this@mockk.lexue } returns lexue }
+        val r = GenerateLexueIcalUrlUseCase(api, ssoReturning(CasLoginDto.Success)).invoke(req())
+        assertEquals(DdlSyncError.School(SchoolProblem.WEBVPN_SIGN_IN), (r as LexueUrlResult.Failed).error)
     }
 
     @Test fun `wrong password returns Failed WrongCredentials`() = runTest {

@@ -1,5 +1,6 @@
 package com.example.personal_studio.feature.bitexam
 
+import com.example.personal_studio.domain.bitimport.SchoolRoute
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.personal_studio.data.local.datastore.ImportCredentialPrefs
@@ -76,7 +77,7 @@ class ExamsViewModel @Inject constructor(
         transient.value = transient.value.copy(syncing = true, error = null, syncSteps = emptyList())
         viewModelScope.launch {
             // 校内优先:lastMode=WEBVPN 时先探一次校内可达性,在校园网下自动脱离"粘校外"。
-            val firstMode = resolveNetworkMode(creds.lastMode)
+            val firstMode = resolveNetworkMode(creds.lastMode, SchoolRoute.PUBLIC)
             sync.syncAuto(
                 ExamSyncRequest(creds.username, creds.password, firstMode, true),
                 onModeSucceeded = { if (it != firstMode) credPrefs.save(creds.username, creds.password, it) },
@@ -106,6 +107,7 @@ class ExamsViewModel @Inject constructor(
         is ExamSyncError.AccountLocked -> "账号锁定"
         is ExamSyncError.CaptchaRequired -> "请到校园页点“重新验证”，并完成应用内的学校网页验证"
         is ExamSyncError.ParseFail -> "教务返回异常"
+        is ExamSyncError.School -> problem.text
         is ExamSyncError.NetworkFail -> "网络错误,请重试"
         is ExamSyncError.Unexpected -> "未知错误"
     }
