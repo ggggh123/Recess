@@ -72,6 +72,20 @@ class KejianLogicTest {
         assertFalse(KejianLogic.needsPolling(fb(1, created = now - 1000).copy(status = "closed"), now))
     }
 
+    @Test fun `an announcement is new once, records keep only live ids`() {
+        fun a(id: Long) = com.example.personal_studio.data.remote.kejian.Announcement(id, "公告$id")
+        val first = KejianLogic.announcementBook(listOf(a(1), a(2)), notified = emptySet(), seen = emptySet())
+        assertEquals(listOf(1L, 2L), first.fresh.map { it.id })
+        // 同一批再来一次：不再算新
+        val again = KejianLogic.announcementBook(listOf(a(1), a(2)), first.notified, first.seen)
+        assertTrue(again.fresh.isEmpty())
+        // 看过的不提醒；下线的 2 从记录里去掉，新上线的 3 算新
+        val next = KejianLogic.announcementBook(listOf(a(1), a(3)), notified = setOf("1", "2"), seen = setOf("1", "2", "9"))
+        assertEquals(listOf(3L), next.fresh.map { it.id })
+        assertEquals(setOf("1", "3"), next.notified)
+        assertEquals(setOf("1"), next.seen)
+    }
+
     @Test fun `beijing day rolls over at 16 00 UTC`() {
         assertEquals("2026-11-21", KejianLogic.bjDay(java.time.Instant.parse("2026-11-21T15:59:00Z").toEpochMilli()))
         assertEquals("2026-11-22", KejianLogic.bjDay(java.time.Instant.parse("2026-11-21T16:00:00Z").toEpochMilli()))

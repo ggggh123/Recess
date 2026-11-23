@@ -9,6 +9,7 @@ import androidx.core.app.NotificationManagerCompat
 import com.example.personal_studio.MainActivity
 import com.example.personal_studio.R
 import com.example.personal_studio.data.local.datastore.LocalFeedback
+import com.example.personal_studio.data.remote.kejian.Announcement
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -36,6 +37,38 @@ class FeedbackNotifier @Inject constructor() {
             text = issue.title + (issue.fixedIn?.let { " · $it 版本" } ?: ""),
             big = issue.title + (issue.fixedIn?.let { "\n在 $it 版本修复，更新后就好了。" } ?: ""),
         )
+    }
+
+    /** 新公告。点开回到课间，弹窗里显示全文。 */
+    fun announcement(context: Context, a: Announcement) {
+        NotificationChannels.ensureCreated(context)
+        // 像从桌面图标打开一样：App 已经开着就回到原来的页面，不重置导航
+        val intent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_MAIN
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        val id = ANN_BASE + (a.id % 100_000).toInt()
+        val pi = PendingIntent.getActivity(context, id, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val first = a.body.lineSequence().firstOrNull { it.isNotBlank() } ?: "打开课间查看"
+        val n = NotificationCompat.Builder(context, NotificationChannels.ANNOUNCE_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(if (a.important) "【重要】" + a.title else a.title)
+            .setContentText(first)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(a.body.ifBlank { "打开课间查看" }))
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .setPriority(if (a.important) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(id, n)
+        } catch (_: SecurityException) {
+            // 没有通知权限：下次打开 App 时仍会弹窗
+        }
+    }
+
+    fun cancelAnnouncement(context: Context, announcementId: Long) {
+        runCatching { NotificationManagerCompat.from(context).cancel(ANN_BASE + (announcementId % 100_000).toInt()) }
     }
 
     fun cancelAll(context: Context) {
@@ -69,5 +102,6 @@ class FeedbackNotifier @Inject constructor() {
 
     private companion object {
         const val NID_BASE = 7_000_000
+        const val ANN_BASE = 7_500_000
     }
 }

@@ -36,6 +36,10 @@ class KejianApi @Inject constructor() {
 
     suspend fun latest(): LatestRelease? = get("/api/v1/latest", LatestResponse.serializer()).latest
 
+    /** 当前对这个版本显示的公告（只带版本号）。 */
+    suspend fun announcements(versionCode: Int): List<Announcement> =
+        get("/api/v1/announcements?vc=$versionCode", AnnouncementsResponse.serializer()).announcements
+
     suspend fun checkin(iid: String?, versionCode: Int, versionName: String, device: DeviceInfo): LatestRelease? =
         post(
             "/api/v1/checkin",

@@ -1,6 +1,7 @@
 package com.example.personal_studio.feature.kejian
 
 import com.example.personal_studio.data.local.datastore.LocalFeedback
+import com.example.personal_studio.data.remote.kejian.Announcement
 import com.example.personal_studio.data.remote.kejian.FeedbackStatus
 import com.example.personal_studio.data.remote.kejian.LatestRelease
 import java.security.MessageDigest
@@ -50,6 +51,18 @@ object KejianLogic {
             next
         }
         return Merge(items, replies, fixed)
+    }
+
+    data class AnnouncementBook(val fresh: List<Announcement>, val notified: Set<String>, val seen: Set<String>)
+
+    /**
+     * 拉到新的公告列表 [list] 之后：没通知过、也没看过的算“新”（要提醒一次），之后记进 notified；
+     * 两份记录都只保留仍在列表里的 id（公告下线后不再占地方）。
+     */
+    fun announcementBook(list: List<Announcement>, notified: Set<String>, seen: Set<String>): AnnouncementBook {
+        val ids = list.map { it.id.toString() }.toSet()
+        val fresh = list.filter { it.id.toString() !in notified && it.id.toString() !in seen }
+        return AnnouncementBook(fresh, (notified intersect ids) + fresh.map { it.id.toString() }, seen intersect ids)
     }
 
     /** 北京日期，签到“每天一次”按它算。 */

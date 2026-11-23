@@ -12,6 +12,7 @@ import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -56,6 +57,7 @@ class KejianApp : Application(), Configuration.Provider {
         appScope.launch {
             runCatching {
                 if (kejian.hasOpenFeedback()) com.example.personal_studio.feature.kejian.FeedbackScheduler.ensureReplyPolling(this@KejianApp)
+                if (kejian.announcementsEnabled.first()) com.example.personal_studio.feature.kejian.AnnouncementScheduler.ensure(this@KejianApp)
             }
         }
     }

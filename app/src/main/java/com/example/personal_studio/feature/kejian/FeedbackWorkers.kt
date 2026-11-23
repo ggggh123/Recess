@@ -42,6 +42,38 @@ class FeedbackReplyWorker @AssistedInject constructor(
     }
 }
 
+/** 每 6 小时拉一次公告；有新公告就发系统通知（App 开着时由弹窗展示）。 */
+@HiltWorker
+class AnnouncementWorker @AssistedInject constructor(
+    @Assisted appContext: Context,
+    @Assisted params: WorkerParameters,
+    private val repo: KejianRepository,
+) : CoroutineWorker(appContext, params) {
+    override suspend fun doWork(): Result {
+        runCatching { repo.fetchAnnouncements(notify = true) }
+        return Result.success()
+    }
+}
+
+object AnnouncementScheduler {
+    private const val NAME = "kejian-announcements"
+
+    fun ensure(context: Context) {
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<AnnouncementWorker>(6, TimeUnit.HOURS)
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .setInitialDelay(15, TimeUnit.MINUTES)
+                .build(),
+        )
+    }
+
+    fun cancel(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(NAME)
+    }
+}
+
 object FeedbackScheduler {
     private const val SEND = "kejian-feedback-send"
     private const val POLL = "kejian-feedback-replies"

@@ -100,13 +100,8 @@ class SendMessageUseCase @Inject constructor(
     }
 
     companion object {
-        const val SYSTEM_PROMPT = """你是嵌在一个终端风格学习 App 里的助手。
-回答规则：
-1. 若用户附了图片，优先基于图片内容作答。
-2. 数学公式用 LaTeX 包裹：行内 ${'$'}...${'$'}，块级 ${'$'}${'$'}...${'$'}${'$'}。
-3. 中文为主，准确、简洁、可追问。不要寒暄、不要前置声明。
-4. 若需要更多信息，直接问。
-5. 输出应该可以直接 cat/print——不要在结尾加感叹号、表情或"祝你学习愉快"之类的客套。"""
+        /** The built-in prompt; 问答 passes the user's own one when they set it (see [ChatPrompts]). */
+        const val SYSTEM_PROMPT = ChatPrompts.DEFAULT
     }
 }
 

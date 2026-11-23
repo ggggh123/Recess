@@ -11,6 +11,7 @@ object NotificationChannels {
     const val GRADES_ID = "grade_updates"
     const val DDL_ID = "assignment_ddl"
     const val FEEDBACK_ID = "feedback_replies"
+    const val ANNOUNCE_ID = "announcements"
 
     fun ensureCreated(context: Context) {
         val nm = ContextCompat.getSystemService(context, NotificationManager::class.java) ?: return
@@ -37,6 +38,11 @@ object NotificationChannels {
         nm.createNotificationChannel(
             NotificationChannel(FEEDBACK_ID, "反馈回复", NotificationManager.IMPORTANCE_DEFAULT).apply {
                 description = "开发者回复了你的反馈、你反馈的问题已修复"
+            }
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(ANNOUNCE_ID, "公告", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "开发者发布的通知，比如学校系统改版、服务维护"
             }
         )
     }

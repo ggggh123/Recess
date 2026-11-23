@@ -8,7 +8,9 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.personal_studio.data.remote.kejian.Announcement
 import com.example.personal_studio.data.remote.kejian.DeviceInfo
 import com.example.personal_studio.data.remote.kejian.IssueRef
 import com.example.personal_studio.data.remote.kejian.LatestRelease
@@ -65,6 +67,39 @@ class KejianPrefs @Inject constructor(@ApplicationContext private val context: C
     val feedback: Flow<List<LocalFeedback>> = store.data.map { p -> decode(p[FEEDBACK]) }
     val lastCheckAt: Flow<Long> = store.data.map { it[LAST_CHECK_AT] ?: 0L }
 
+    // ---- 公告 ----
+    private val annSer = ListSerializer(Announcement.serializer())
+    val announcementsEnabled: Flow<Boolean> = store.data.map { it[ANN_ENABLED] ?: true }
+    val announcements: Flow<List<Announcement>> = store.data.map { p ->
+        p[ANN_CACHE]?.let { runCatching { json.decodeFromString(annSer, it) }.getOrNull() } ?: emptyList()
+    }
+    /** 在 App 里看过（弹窗点过“知道了”）的公告 id。 */
+    val seenAnnouncements: Flow<Set<Long>> = store.data.map { p -> p[ANN_SEEN].orEmpty().mapNotNull { it.toLongOrNull() }.toSet() }
+
+    suspend fun setAnnouncementsEnabled(on: Boolean) = store.edit { it[ANN_ENABLED] = on }
+    suspend fun lastAnnouncementFetch(): Long = store.data.first()[ANN_FETCHED] ?: 0L
+
+    /**
+     * 存下最新的公告列表，返回其中第一次见到、还没发过通知的（之后不会再算“新”）。
+     * “看过 / 通知过”的记录只保留仍在列表里的，免得越积越多。
+     */
+    suspend fun saveAnnouncements(list: List<Announcement>): List<Announcement> {
+        var fresh = emptyList<Announcement>()
+        store.edit { p ->
+            val book = com.example.personal_studio.feature.kejian.KejianLogic.announcementBook(
+                list, notified = p[ANN_NOTIFIED].orEmpty(), seen = p[ANN_SEEN].orEmpty(),
+            )
+            fresh = book.fresh
+            p[ANN_CACHE] = json.encodeToString(annSer, list)
+            p[ANN_NOTIFIED] = book.notified
+            p[ANN_SEEN] = book.seen
+            p[ANN_FETCHED] = System.currentTimeMillis()
+        }
+        return fresh
+    }
+
+    suspend fun markAnnouncementSeen(id: Long) = store.edit { it[ANN_SEEN] = it[ANN_SEEN].orEmpty() + id.toString() }
+
     /** 随机安装 ID：第一次需要时生成；关闭统计时删除，再打开会是一个新的。 */
     suspend fun installId(): String {
         store.data.first()[IID]?.let { return it }
@@ -116,5 +151,10 @@ class KejianPrefs @Inject constructor(@ApplicationContext private val context: C
         val DISMISSED = intPreferencesKey("dismissed_version")
         val FEEDBACK = stringPreferencesKey("feedback")
         val LAST_POLL = longPreferencesKey("last_reply_poll")
+        val ANN_ENABLED = booleanPreferencesKey("announcements_enabled")
+        val ANN_CACHE = stringPreferencesKey("announcements")
+        val ANN_SEEN = stringSetPreferencesKey("announcements_seen")
+        val ANN_NOTIFIED = stringSetPreferencesKey("announcements_notified")
+        val ANN_FETCHED = longPreferencesKey("announcements_fetched_at")
     }
 }

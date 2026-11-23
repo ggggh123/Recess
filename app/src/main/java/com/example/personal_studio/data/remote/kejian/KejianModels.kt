@@ -83,5 +83,21 @@ data class FeedbackStatus(
     val issue: IssueRef? = null,
 )
 
+/** 开发者在后台发布的公告。[level] 是 "info" 或 "important"。 */
+@Serializable
+data class Announcement(
+    val id: Long,
+    val title: String,
+    val body: String = "",
+    val link: String? = null,
+    val level: String = "info",
+    val publishedAt: Long = 0,
+) {
+    val important get() = level == "important"
+}
+
+@Serializable
+internal data class AnnouncementsResponse(val announcements: List<Announcement> = emptyList())
+
 @Serializable
 data class IssueRef(val id: Long, val title: String, val status: String, val fixedIn: String? = null)

@@ -6,6 +6,7 @@ import com.example.personal_studio.BuildConfig
 import com.example.personal_studio.core.notification.FeedbackNotifier
 import com.example.personal_studio.data.local.datastore.KejianPrefs
 import com.example.personal_studio.data.local.datastore.LocalFeedback
+import com.example.personal_studio.data.remote.kejian.Announcement
 import com.example.personal_studio.data.remote.kejian.DeviceInfo
 import com.example.personal_studio.data.remote.kejian.KejianApi
 import com.example.personal_studio.data.remote.kejian.KejianApiException
@@ -45,6 +46,9 @@ class KejianRepository @Inject constructor(
     val autoCheck: Flow<Boolean> = prefs.autoCheck
     val dismissedVersion: Flow<Int> = prefs.dismissedVersion
     val lastCheckAt: Flow<Long> = prefs.lastCheckAt
+    val announcementsEnabled: Flow<Boolean> = prefs.announcementsEnabled
+    val announcements: Flow<List<Announcement>> = prefs.announcements
+    val seenAnnouncements: Flow<Set<Long>> = prefs.seenAnnouncements
 
     fun device() = DeviceInfo(
         brand = Build.BRAND?.take(40),
@@ -62,6 +66,36 @@ class KejianRepository @Inject constructor(
             runCatching { if (prefs.feedbackSnapshot().any { !it.sent && it.status != REJECTED }) sendPending() }
             // App 开着的时候回复由弹窗展示，这里就不再发系统通知
             runCatching { pollReplies(minIntervalMs = 30 * 60_000L, notify = false) }
+            runCatching { fetchAnnouncements(minIntervalMs = 15 * 60_000L, notify = false) }
+        }
+    }
+
+    // ---------------------------------------------------------------- 公告
+
+    /**
+     * 拉一次公告（只带版本号）。新出现的：App 开着时由弹窗展示（[notify] = false），
+     * 在后台时发系统通知。关掉了“接收公告”就不联网。
+     */
+    suspend fun fetchAnnouncements(minIntervalMs: Long = 0, notify: Boolean = true) {
+        if (!prefs.announcementsEnabled.first()) return
+        if (System.currentTimeMillis() - prefs.lastAnnouncementFetch() < minIntervalMs) return
+        val list = api.announcements(BuildConfig.VERSION_CODE)
+        val fresh = prefs.saveAnnouncements(list)
+        if (notify) fresh.forEach { notifier.announcement(context, it) }
+    }
+
+    suspend fun markAnnouncementSeen(id: Long) {
+        prefs.markAnnouncementSeen(id)
+        notifier.cancelAnnouncement(context, id)
+    }
+
+    suspend fun setAnnouncementsEnabled(on: Boolean) {
+        prefs.setAnnouncementsEnabled(on)
+        if (on) {
+            AnnouncementScheduler.ensure(context)
+            runCatching { fetchAnnouncements(notify = false) }
+        } else {
+            AnnouncementScheduler.cancel(context)
         }
     }
 

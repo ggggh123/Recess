@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.personal_studio.BuildConfig
 import com.example.personal_studio.data.local.datastore.LocalFeedback
+import com.example.personal_studio.data.remote.kejian.Announcement
 import com.example.personal_studio.data.remote.kejian.KejianApiException
 import com.example.personal_studio.data.remote.kejian.LatestRelease
 import com.example.personal_studio.feature.kejian.KejianLogic
@@ -100,22 +101,52 @@ class FeedbackViewModel @Inject constructor(private val repo: KejianRepository) 
 
 // ================================================================ 设置页的“关于”与统计开关
 
-data class KejianSettingsUi(val newerVersion: String? = null, val unseenReplies: Int = 0, val statsEnabled: Boolean = true)
+data class KejianSettingsUi(
+    val newerVersion: String? = null,
+    val unseenReplies: Int = 0,
+    val statsEnabled: Boolean = true,
+    val announcementsEnabled: Boolean = true,
+    val announcementCount: Int = 0,
+)
 
 @HiltViewModel
 class KejianSettingsViewModel @Inject constructor(private val repo: KejianRepository) : ViewModel() {
-    val ui: StateFlow<KejianSettingsUi> = combine(repo.latest, repo.feedback, repo.statsEnabled) { latest, fb, stats ->
+    val ui: StateFlow<KejianSettingsUi> = combine(
+        repo.latest, repo.feedback, repo.statsEnabled, repo.announcementsEnabled, repo.announcements,
+    ) { latest, fb, stats, annOn, ann ->
         KejianSettingsUi(
             newerVersion = latest?.takeIf { KejianLogic.isNewer(it, BuildConfig.VERSION_CODE) }?.versionName,
             unseenReplies = fb.count { it.hasUnseenReply },
             statsEnabled = stats,
+            announcementsEnabled = annOn,
+            announcementCount = ann.size,
         )
     }.state(this, KejianSettingsUi())
 
     fun setStats(on: Boolean) = viewModelScope.launch { repo.setStatsEnabled(on) }
 }
 
-// ================================================================ 全局弹窗：新回复、新版本
+// ================================================================ 公告页
+
+@HiltViewModel
+class AnnouncementsViewModel @Inject constructor(private val repo: KejianRepository) : ViewModel() {
+    val enabled: StateFlow<Boolean> = repo.announcementsEnabled.state(this, true)
+    val items: StateFlow<List<Announcement>> = repo.announcements.state(this, emptyList())
+    private val _refreshing = MutableStateFlow(false)
+    val refreshing = _refreshing.asStateFlow()
+
+    /** 打开公告页：先把现有的都算看过，再向服务器要一次最新的。 */
+    fun onOpen() = viewModelScope.launch {
+        _refreshing.value = true
+        runCatching { repo.fetchAnnouncements(notify = false) }
+        repo.announcements.first().forEach { repo.markAnnouncementSeen(it.id) }
+        _refreshing.value = false
+    }
+
+    fun setEnabled(on: Boolean) = viewModelScope.launch { repo.setAnnouncementsEnabled(on) }
+}
+
+// ================================================================ 全局弹窗：新回复、公告、新版本
 
 @HiltViewModel
 class KejianPromptsViewModel @Inject constructor(
@@ -123,6 +154,14 @@ class KejianPromptsViewModel @Inject constructor(
     private val installer: UpdateInstaller,
 ) : ViewModel() {
     val reply: StateFlow<LocalFeedback?> = repo.feedback.map { list -> list.firstOrNull { it.hasUnseenReply } }.state(this, null)
+
+    /** The newest announcement not yet seen in the app (none while announcements are off). */
+    val announcement: StateFlow<Announcement?> =
+        combine(repo.announcements, repo.seenAnnouncements, repo.announcementsEnabled) { list, seen, on ->
+            if (on) list.firstOrNull { it.id !in seen } else null
+        }.state(this, null)
+
+    fun announcementSeen(id: Long) = viewModelScope.launch { repo.markAnnouncementSeen(id) }
 
     val update: StateFlow<LatestRelease?> = combine(repo.latest, repo.autoCheck, repo.dismissedVersion) { latest, auto, dismissed ->
         latest?.takeIf { KejianLogic.shouldPrompt(it, BuildConfig.VERSION_CODE, auto, dismissed) }

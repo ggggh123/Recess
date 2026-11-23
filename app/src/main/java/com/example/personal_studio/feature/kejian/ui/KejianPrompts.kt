@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -38,11 +39,14 @@ fun KejianPrompts(
     vm: KejianPromptsViewModel = hiltViewModel(),
 ) {
     val reply by vm.reply.collectAsStateWithLifecycle()
+    val announcement by vm.announcement.collectAsStateWithLifecycle()
     val update by vm.update.collectAsStateWithLifecycle()
+    val uri = LocalUriHandler.current
     if (!enabled) return
     val c = Tg.colors
 
     val r = reply
+    val a = announcement
     val u = update
     if (r != null) {
         TgDialog(onDismiss = { vm.seen() }, title = "开发者回复了你的反馈") {
@@ -67,6 +71,35 @@ fun KejianPrompts(
                 TgPillButton("查看全部", onClick = { vm.seen(); onOpenFeedback() }, modifier = Modifier.weight(1f))
             }
         }
+    } else if (a != null) {
+        TgDialog(onDismiss = { vm.announcementSeen(a.id) }, title = a.title) {
+            if (a.important) {
+                Text(
+                    "重要", style = MaterialTheme.typography.labelMedium, color = c.onAccent,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(c.accent).padding(horizontal = 8.dp, vertical = 2.dp),
+                )
+            }
+            Text(
+                "公告 · " + announcementDate(a.publishedAt),
+                style = MaterialTheme.typography.bodySmall, color = c.textTertiary,
+                modifier = Modifier.padding(top = if (a.important) 8.dp else 0.dp),
+            )
+            if (a.body.isNotBlank()) {
+                Column(Modifier.padding(top = 12.dp).heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                    Text(a.body, style = MaterialTheme.typography.bodyLarge, color = c.text)
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                val link = a.link
+                if (link != null) {
+                    TgPillButton("查看详情", onClick = {
+                        vm.announcementSeen(a.id)
+                        runCatching { uri.openUri(link) }
+                    }, style = PillStyle.SECONDARY, modifier = Modifier.weight(1f))
+                }
+                TgPillButton("知道了", onClick = { vm.announcementSeen(a.id) }, modifier = Modifier.weight(1f))
+            }
+        }
     } else if (u != null) {
         TgDialog(onDismiss = { vm.later(u.versionCode) }, title = "课间 ${u.versionName} 可以更新了") {
             Text(
@@ -85,3 +118,8 @@ fun KejianPrompts(
         }
     }
 }
+
+/** 公告的发布日期，北京时间“11 月 23 日”。 */
+internal fun announcementDate(ms: Long): String =
+    if (ms <= 0) "" else java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.of("Asia/Shanghai"))
+        .let { "${it.monthValue} 月 ${it.dayOfMonth} 日" }

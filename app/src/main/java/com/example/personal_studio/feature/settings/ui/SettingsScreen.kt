@@ -32,6 +32,7 @@ import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.PrivacyTip
@@ -194,6 +195,12 @@ fun SettingsScreen(
                     summary = "遇到问题、想要的功能，直接告诉开发者",
                     onClick = { onNavigate(NavRoutes.SETTINGS_FEEDBACK) },
                     trailing = { TgRowValue(if (kj.unseenReplies > 0) "${kj.unseenReplies} 条新回复" else "", accent = kj.unseenReplies > 0) },
+                )
+                TgSettingRow(
+                    "公告", icon = Icons.Outlined.Campaign,
+                    summary = "开发者发布的通知，比如学校系统改版、服务维护",
+                    onClick = { onNavigate(NavRoutes.SETTINGS_ANNOUNCEMENTS) },
+                    trailing = { TgRowValue(if (!kj.announcementsEnabled) "已关闭" else if (kj.announcementCount > 0) "${kj.announcementCount} 条" else "") },
                 )
                 TgSettingRow(
                     "匿名使用统计", icon = Icons.Outlined.QueryStats,

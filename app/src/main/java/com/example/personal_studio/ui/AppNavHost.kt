@@ -362,7 +362,11 @@ fun AppNavHost(
             com.example.personal_studio.feature.settings.ui.AiModelScreen(
                 onBack = { navController.popBackStack() },
                 onOpenAdvanced = { navController.navigate(NavRoutes.SETTINGS_LLM) },
+                onOpenSystemPrompt = { navController.navigate(NavRoutes.SETTINGS_SYSTEM_PROMPT) },
             )
+        }
+        composable(NavRoutes.SETTINGS_SYSTEM_PROMPT) {
+            com.example.personal_studio.feature.settings.ui.SystemPromptScreen(onBack = { navController.popBackStack() })
         }
         composable(NavRoutes.SETTINGS_LLM) {
             com.example.personal_studio.feature.settings.ui.LlmSettingsScreen(
@@ -409,6 +413,9 @@ fun AppNavHost(
                 onBack = { navController.popBackStack() },
                 onNeedLogin = { navController.navigate(NavRoutes.login("empty-room")) },
             )
+        }
+        composable(NavRoutes.SETTINGS_ANNOUNCEMENTS) {
+            com.example.personal_studio.feature.kejian.ui.AnnouncementsScreen(onBack = { navController.popBackStack() })
         }
         composable(NavRoutes.SETTINGS_UPDATE) {
             com.example.personal_studio.feature.kejian.ui.UpdateScreen(onBack = { navController.popBackStack() })

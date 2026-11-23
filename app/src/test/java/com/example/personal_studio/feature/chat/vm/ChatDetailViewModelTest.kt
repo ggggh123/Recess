@@ -9,6 +9,7 @@ import com.example.personal_studio.domain.chat.SendMessageUseCase
 import com.example.personal_studio.domain.model.MessageRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -87,14 +88,44 @@ class ChatDetailViewModelTest {
         }
     }
 
-    private fun vmWith(repo: FakeChatRepository, sid: Long, llm: com.example.personal_studio.data.remote.llm.LLMProvider) =
+    private fun vmWith(
+        repo: FakeChatRepository,
+        sid: Long,
+        llm: com.example.personal_studio.data.remote.llm.LLMProvider,
+        prefs: FakeUserPreferencesRepository = FakeUserPreferencesRepository(),
+    ) =
         ChatDetailViewModel(
             sessionId = sid,
             repo = repo,
             send = SendMessageUseCase(repo, llm),
             titleGen = GenerateTitleUseCase(repo, llm),
-            prefs = FakeUserPreferencesRepository(),
+            prefs = prefs,
         )
+
+    @Test fun `the user's own system prompt is sent, the built-in one otherwise`() = runTest {
+        val repo = FakeChatRepository()
+        val sid = repo.createSession("t")
+        val llm = com.example.personal_studio.data.remote.llm.FakeLLMProvider(listOf("答"))
+        val prefs = FakeUserPreferencesRepository()
+        val vm = vmWith(repo, sid, llm, prefs)
+
+        vm.onInputChanged("第一问")
+        vm.onSend()
+        vm.uiState.first { !it.isSending && it.streamingText == null }
+        assertEquals(com.example.personal_studio.domain.chat.ChatPrompts.DEFAULT, llm.lastMessages.first().text)
+
+        prefs.setChatSystemPrompt("只用英文回答。")
+        vm.onInputChanged("第二问")
+        vm.onSend()
+        vm.uiState.first { !it.isSending && it.streamingText == null && it.messages.size == 4 }
+        assertEquals(com.example.personal_studio.data.remote.llm.LlmRole.SYSTEM, llm.lastMessages.first().role)
+        assertEquals("只用英文回答。", llm.lastMessages.first().text)
+
+        // 回溯 uses it too
+        vm.onRewind(repo.listMessages(sid).first().id)
+        vm.uiState.first { !it.isSending && it.streamingText == null && it.messages.size == 2 }
+        assertEquals("只用英文回答。", llm.lastMessages.first().text)
+    }
 
     private suspend fun FakeChatRepository.seedTwoTurns(sid: Long) {
         appendMessage(sid, MessageRole.USER, "第一问", attachedImagePaths = listOf("/tmp/a.jpg"))

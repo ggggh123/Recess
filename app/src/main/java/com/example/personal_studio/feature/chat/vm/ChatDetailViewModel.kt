@@ -11,6 +11,7 @@ import com.example.personal_studio.data.local.datastore.UserPreferencesRepositor
 import com.example.personal_studio.data.repository.ChatRepository
 import com.example.personal_studio.domain.chat.GenerateTitleUseCase
 import com.example.personal_studio.domain.chat.SendChunk
+import com.example.personal_studio.domain.chat.ChatPrompts
 import com.example.personal_studio.domain.chat.SendMessageUseCase
 import com.example.personal_studio.domain.model.ChatMessage
 import com.example.personal_studio.domain.model.ChatSession
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
@@ -199,7 +201,7 @@ class ChatDetailViewModel @AssistedInject constructor(
         sendJob = viewModelScope.launch {
             // 修改: the edited message and everything after it make way for the new version.
             if (replacing != null) repo.deleteMessagesFrom(sessionId, replacing, inclusive = true)
-            streamAnswer(send(sessionId = sessionId, userText = text, userImagePaths = imagePaths))
+            streamAnswer(send(sessionId = sessionId, userText = text, userImagePaths = imagePaths, systemPrompt = systemPrompt()))
         }
     }
 
@@ -233,9 +235,12 @@ class ChatDetailViewModel @AssistedInject constructor(
         _uiState.update { it.startStream(floorId = messageId) }
         sendJob = viewModelScope.launch {
             repo.deleteMessagesFrom(sessionId, messageId, inclusive = false)
-            streamAnswer(send.reply(sessionId))
+            streamAnswer(send.reply(sessionId, systemPrompt()))
         }
     }
+
+    /** The system prompt for this request: the user's own (设置 → AI 模型) or the built-in one. */
+    private suspend fun systemPrompt(): String = ChatPrompts.effective(prefs.chatSystemPrompt.first())
 
     private suspend fun streamAnswer(chunks: Flow<SendChunk>) {
         val buffer = StringBuilder()

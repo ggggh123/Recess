@@ -83,6 +83,7 @@ object NavRoutes {
     const val SETTINGS_NOTIF = "settings/notif"
     const val SETTINGS_LLM = "settings/llm"
     const val SETTINGS_AI_MODEL = "settings/ai-model"
+    const val SETTINGS_SYSTEM_PROMPT = "settings/system-prompt"
     const val SETTINGS_GRADES_POLL = "settings/grades-poll"
     const val ASSIGNMENTS = "assignments"
     const val EXAMS = "exams"
@@ -90,4 +91,5 @@ object NavRoutes {
     const val SETTINGS_DDL_POLL = "settings/ddl-poll"
     const val SETTINGS_UPDATE = "settings/update"
     const val SETTINGS_FEEDBACK = "settings/feedback"
+    const val SETTINGS_ANNOUNCEMENTS = "settings/announcements"
 }

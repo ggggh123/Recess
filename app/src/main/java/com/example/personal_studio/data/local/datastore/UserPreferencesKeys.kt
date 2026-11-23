@@ -15,6 +15,8 @@ internal object UserPreferencesKeys {
     val TEMPERATURE = floatPreferencesKey("llm_temperature")
     val MAX_TOKENS = intPreferencesKey("llm_max_tokens")
     val TOP_P = floatPreferencesKey("llm_top_p")
+    /** 问答的自定义系统提示词；没有这个键表示用默认的。 */
+    val CHAT_SYSTEM_PROMPT = stringPreferencesKey("chat_system_prompt")
 
     // Legacy keys — migrated to API_KEY on first launch, then ignored.
     val LEGACY_OPENROUTER_API_KEY = stringPreferencesKey("openrouter_api_key")

@@ -31,6 +31,10 @@ interface UserPreferencesRepository {
     val generation: Flow<GenerationSettings> get() = flowOf(GenerationSettings())
     suspend fun setGeneration(settings: GenerationSettings) {}
 
+    /** The user's own system prompt for 问答; null means the built-in one (`ChatPrompts.DEFAULT`). */
+    val chatSystemPrompt: Flow<String?> get() = flowOf(null)
+    suspend fun setChatSystemPrompt(prompt: String?) {}
+
     /**
      * One-shot migration: if the user had a key stored under the old OpenRouter key name
      * and doesn't yet have one under [UserPreferencesKeys.API_KEY], copy it over and
@@ -99,6 +103,16 @@ class UserPreferencesRepositoryImpl(
             settings.temperature?.let { prefs[UserPreferencesKeys.TEMPERATURE] = it } ?: prefs.remove(UserPreferencesKeys.TEMPERATURE)
             settings.maxTokens?.let { prefs[UserPreferencesKeys.MAX_TOKENS] = it } ?: prefs.remove(UserPreferencesKeys.MAX_TOKENS)
             settings.topP?.let { prefs[UserPreferencesKeys.TOP_P] = it } ?: prefs.remove(UserPreferencesKeys.TOP_P)
+        }
+    }
+
+    override val chatSystemPrompt: Flow<String?> =
+        dataStore.data.map { it[UserPreferencesKeys.CHAT_SYSTEM_PROMPT]?.takeIf { v -> v.isNotBlank() } }
+
+    override suspend fun setChatSystemPrompt(prompt: String?) {
+        dataStore.edit { prefs ->
+            if (prompt.isNullOrBlank()) prefs.remove(UserPreferencesKeys.CHAT_SYSTEM_PROMPT)
+            else prefs[UserPreferencesKeys.CHAT_SYSTEM_PROMPT] = prompt
         }
     }
 

@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Icon
@@ -46,6 +47,8 @@ import com.example.personal_studio.ui.components.TgTopBar
 import com.example.personal_studio.ui.components.TgCard
 import com.example.personal_studio.ui.components.TgGroupLabel
 import com.example.personal_studio.ui.components.TgPillButton
+import com.example.personal_studio.feature.settings.vm.SystemPromptViewModel
+import com.example.personal_studio.ui.components.TgRowValue
 import com.example.personal_studio.ui.components.TgSettingRow
 import com.example.personal_studio.ui.theme.Tg
 
@@ -60,9 +63,12 @@ internal fun SettingsUiState.usingCustomEndpoint(): Boolean = custom
 fun AiModelScreen(
     onBack: () -> Unit,
     onOpenAdvanced: () -> Unit,
+    onOpenSystemPrompt: () -> Unit = {},
     vm: SettingsViewModel = hiltViewModel(),
+    promptVm: SystemPromptViewModel = hiltViewModel(),
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
+    val prompt by promptVm.ui.collectAsStateWithLifecycle()
     val c = Tg.colors
     val endpoint = state.endpoint
     val custom = state.custom
@@ -120,6 +126,16 @@ fun AiModelScreen(
                 onReset = vm::onResetGeneration,
                 modifier = Modifier.enterUp(true, 80),
             )
+
+            TgGroupLabel("问答", Modifier.enterUp(true, 100))
+            TgCard(Modifier.enterUp(true, 100)) {
+                TgSettingRow(
+                    "系统提示词", icon = Icons.Outlined.EditNote, first = true,
+                    summary = prompt.effective.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(40) ?: "",
+                    onClick = onOpenSystemPrompt,
+                    trailing = { TgRowValue(if (prompt.custom != null) "自定义" else "默认", accent = prompt.custom != null) },
+                )
+            }
 
             TgGroupLabel("连接", Modifier.enterUp(true, 120))
             ConnectionTestCard(state.testConnection, onTest = vm::onTestConnection, modifier = Modifier.enterUp(true, 120))

@@ -36,6 +36,12 @@ class FakeUserPreferencesRepository : UserPreferencesRepository {
         generationState.value = settings
     }
 
+    private val promptState = MutableStateFlow<String?>(null)
+    override val chatSystemPrompt: Flow<String?> = promptState
+    override suspend fun setChatSystemPrompt(prompt: String?) {
+        promptState.value = if (prompt.isNullOrBlank()) null else prompt
+    }
+
     override suspend fun migrateLegacyKeysIfNeeded() {
         // no-op for tests
     }
