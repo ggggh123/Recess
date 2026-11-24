@@ -8,6 +8,8 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.create
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
@@ -78,7 +80,13 @@ class BitApiClient internal constructor(
      * Idle connections go too: between syncs a mobile carrier's NAT (or a switch between
      * Wi-Fi and mobile data) silently drops them, and a request sent on one then waits out
      * the whole read timeout. On a real phone the first CAS request of a sync did exactly
-     * that after 2–11 idle minutes. A new session therefore always starts on new connections. */
+     * that after 2–11 idle minutes. A new session therefore always starts on new connections.
+     *
+     * Closing a TLS connection writes its close_notify, and Android refuses network work on the
+     * main thread (NetworkOnMainThreadException). A sign-in started from the screen ends there,
+     * so in 1.2.0 a sign-in the school had already accepted ended as "登录暂时未完成". The
+     * connections are therefore closed on a thread of their own; close() waits briefly for it
+     * and never throws, so cleanup cannot replace the outcome of the session. */
     fun close() {
         jwappRetrofit = null
         jwmsRetrofit = null
@@ -86,7 +94,19 @@ class BitApiClient internal constructor(
         eclassRetrofit = null
         openedMode = null
         cookieJar.clear()
-        client.connectionPool.evictAll()
+        try {
+            evictor.submit { client.connectionPool.evictAll() }.get(EVICT_WAIT_SECONDS, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            // Still running or failed: whatever is left idles out of the pool on its own.
+            BitTrace.log("close: 断开空闲连接未完成 ${(e.cause ?: e).javaClass.simpleName}")
+        }
+    }
+
+    private val evictor = Executors.newSingleThreadExecutor { r -> Thread(r, "bit-evict").apply { isDaemon = true } }
+
+    private companion object {
+        /** Closing idle sockets takes milliseconds; this only bounds a pathological case. */
+        const val EVICT_WAIT_SECONDS = 2L
     }
 
     val jwapp: BitJwappService

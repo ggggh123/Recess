@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.personal_studio.data.local.datastore.ImportCredentialPrefs
 import com.example.personal_studio.data.local.datastore.LoginPrefs
+import com.example.personal_studio.data.network.bit.BitTrace
 import com.example.personal_studio.domain.bitimport.CaptchaDecision
 import com.example.personal_studio.domain.bitimport.CasPrompter
 import com.example.personal_studio.domain.bitimport.ResolveNetworkModeUseCase
@@ -221,7 +222,10 @@ class BitLoginViewModel @Inject constructor(
                 }
             } catch (e: CancellationException) {
                 throw e
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                // Record what went wrong (class and message only, as the rest of the trace):
+                // the 1.2.0 failure behind this message left nothing to go on.
+                BitTrace.log("login: 未完成 ${e.javaClass.name}: ${e.message.orEmpty().take(200)}")
                 _uiState.update { it.copy(error = LoginOutcome.Unexpected("登录暂时未完成，请重试或使用学校网页验证")) }
             } finally {
                 webResult = null
