@@ -2,7 +2,7 @@
 
 课间（原名 Personal Studio）是面向北理工学生学习生活的 Android 应用，当前版本 1.2.0：把 AI 问答、文档扫描、知识库、日程与北京理工大学教务数据放在一起。本地内容由 Room 和应用私有文件保存；模型请求和学校同步需要联网。检查更新、问题反馈、公告和匿名使用统计连接课间自己的服务器（bit-recess.tech），学校数据不经过它。
 
-本文及 `docs/` 于 **2026-11-15 按当前工作区源码核对**，包含此前尚未提交的教务修复。历史实测日期单独保留，不表示这些功能已在今天重新完成线上验收。
+本文及 `docs/` 于 **2026-11-15 按当前工作区源码核对**，包含此前尚未提交的教务修复。
 
 ## 当前功能
 
@@ -44,7 +44,7 @@ Debug 版可调试、不预编译，每个页面第一次打开都会明显更�
 .\gradlew.bat :app:installProfile
 ```
 
-内置模型是 DeepSeek 的 `deepseek-flash` 和 `deepseek-v4-pro`（OpenAI 格式，`https://api.deepseek.com`）。内置密钥放在已被 Git 忽略的 `local.properties` 中，**不要提交**；编译不要求提供密钥，没有密钥时 AI 功能会提示改用自定义接口：
+内置模型是 DeepSeek 的 `deepseek-flash` 和 `deepseek-v4-pro`（OpenAI 格式，`https://api.deepseek.com`）。APP已有自己的内置API密钥，**不要再提交你自己的API密钥**；编译不要求提供密钥，没有密钥时 AI 功能会提示改用自定义接口：
 
 ```properties
 API_KEY=YOUR_DEEPSEEK_KEY
@@ -52,7 +52,7 @@ API_BASE_URL=https://api.deepseek.com
 DEFAULT_LLM_MODEL=deepseek-flash
 ```
 
-这些值会编译进 APK 的 `BuildConfig`，拿到安装包的人可以提取出来，不能作为保密分发机制；分发安装包前应换成单独的、限额的密钥。应用内“设置 → AI 模型 → 自定义接口”可以改用自己的服务（OpenAI 兼容、Anthropic、Google Gemini），选回内置模型会清除自定义地址、密钥和格式，详见[学习工具实现](docs/learning-tools.md)。
+应用内“设置 → AI 模型 → 自定义接口”可以改用自己的服务（OpenAI 兼容、Anthropic、Google Gemini），选回内置模型会清除自定义地址、密钥和格式，详见[学习工具实现](docs/learning-tools.md)。
 
 ## 开发文档
 
