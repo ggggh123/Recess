@@ -82,7 +82,14 @@ android {
     }
 
     buildTypes {
+        // 深度模式联调：调试版可以用 -PdeepGateway=http://127.0.0.1:18787 连本机的网关（配合 adb reverse）。
+        // 不传就和正式版一样连 bit-recess.tech；release 和 profile 固定为空。
+        getByName("debug") {
+            val deepGateway = (project.findProperty("deepGateway") as String?).orEmpty()
+            buildConfigField("String", "DEEP_GATEWAY", "\"$deepGateway\"")
+        }
         release {
+            buildConfigField("String", "DEEP_GATEWAY", "\"\"")
             signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = false
             proguardFiles(

@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
@@ -37,12 +38,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.personal_studio.data.deep.DeepConversation
 import com.example.personal_studio.domain.model.ChatSessionSummary
 import com.example.personal_studio.feature.chat.vm.ChatListViewModel
 import com.example.personal_studio.feature.timeline.today.enterUp
@@ -68,8 +71,12 @@ fun ChatListScreen(
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LifecycleResumeEffect(Unit) {
         now = System.currentTimeMillis()
+        vm.refreshDeep()
         onPauseOrDispose { }
     }
+    val deepPrivacyAccepted by vm.deepPrivacyAccepted.collectAsStateWithLifecycle(initialValue = false)
+    var askDeepConsent by remember { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
     var menuFor by remember { mutableStateOf<ChatSessionSummary?>(null) }
     var renameFor by remember { mutableStateOf<ChatSessionSummary?>(null) }
     var deleteFor by remember { mutableStateOf<ChatSessionSummary?>(null) }
@@ -83,6 +90,14 @@ fun ChatListScreen(
                 }
                 EntryCard("拍题提问", "拍下题目，直接讲解", Icons.Outlined.PhotoCamera, Modifier.weight(1f)) {
                     vm.createNewSession(onCreated = onPhotoQuestion)
+                }
+            }
+        }
+        // 只有服务器上的深度模式可用时才出现（后台开关关着、连不上时完全看不到）。
+        if (state.deepAvailable) {
+            item(key = "deep-entry") {
+                DeepEntryCard(Modifier.padding(top = 12.dp).enterUp(true, 40)) {
+                    if (deepPrivacyAccepted) vm.createDeepSession(consent = false, onCreated = onOpenSession) else askDeepConsent = true
                 }
             }
         }
@@ -107,9 +122,20 @@ fun ChatListScreen(
                 )
             }
             items(g.items, key = { it.id }) { s ->
-                SessionRow(s, now, onClick = { onOpenSession(s.id) }, onLongClick = { menuFor = s }, modifier = Modifier.animateItem())
+                SessionRow(s, now, deep = state.deep[s.id], onClick = { onOpenSession(s.id) }, onLongClick = { menuFor = s }, modifier = Modifier.animateItem())
             }
         }
+    }
+
+    if (askDeepConsent) {
+        DeepPrivacyDialog(
+            onAccept = {
+                askDeepConsent = false
+                vm.createDeepSession(consent = true, onCreated = onOpenSession)
+            },
+            onOpenPrivacy = { runCatching { uriHandler.openUri(com.example.personal_studio.data.remote.kejian.KejianApi.PRIVACY_URL) } },
+            onDismiss = { askDeepConsent = false },
+        )
     }
 
     menuFor?.let { s ->
@@ -163,6 +189,7 @@ private fun EntryCard(title: String, hint: String, icon: ImageVector, modifier: 
 private fun SessionRow(
     s: ChatSessionSummary,
     now: Long,
+    deep: DeepConversation?,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -178,19 +205,74 @@ private fun SessionRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Text(displayTitle(s.title), style = MaterialTheme.typography.bodyLarge, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    displayTitle(s.title), style = MaterialTheme.typography.bodyLarge, color = c.text,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+                )
+                if (deep != null) DeepTag()
+            }
             Text(
-                s.lastSnippet?.let(ChatListGrouping::plainSnippet)?.takeIf { it.isNotBlank() } ?: "还没有消息",
+                deep?.activity?.takeIf { deep.running }
+                    ?: s.lastSnippet?.let(ChatListGrouping::plainSnippet)?.takeIf { it.isNotBlank() } ?: "还没有消息",
                 style = MaterialTheme.typography.bodySmall, color = c.textSecondary,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp),
             )
         }
         Column(horizontalAlignment = Alignment.End) {
-            Text(ChatListGrouping.rowTime(s.updatedAt, now), style = MaterialTheme.typography.bodySmall, color = c.textSecondary)
+            Text(
+                if (deep?.running == true) "进行中" else ChatListGrouping.rowTime(s.updatedAt, now),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (deep?.running == true) c.accent else c.textSecondary,
+            )
             if (s.msgCount > 0) {
                 Text("${s.msgCount} 条", style = MaterialTheme.typography.labelSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Normal),
                     color = c.textTertiary, modifier = Modifier.padding(top = 2.dp))
             }
         }
     }
+}
+
+/** 问答页的“深度模式”入口：整行宽，浅强调色底。 */
+@Composable
+private fun DeepEntryCard(modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val c = Tg.colors
+    val interaction = remember { MutableInteractionSource() }
+    val shape = RoundedCornerShape(20.dp)
+    Row(
+        modifier
+            .fillMaxWidth()
+            .pressScale(interaction)
+            .clip(shape)
+            .background(c.accentSoft)
+            .clickable(interaction, indication = null, role = Role.Button, onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(Modifier.size(40.dp).background(c.surface, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = c.accent, modifier = Modifier.size(20.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text("深度模式", style = MaterialTheme.typography.titleMedium, color = c.text)
+            Text(
+                "在服务器上写代码验算、联网查资料，适合难题",
+                style = MaterialTheme.typography.bodySmall, color = c.textSecondary, modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
+}
+
+/** 会话标题后面的“深度”小标签。 */
+@Composable
+private fun DeepTag() {
+    val c = Tg.colors
+    Text(
+        "深度",
+        style = MaterialTheme.typography.labelSmall,
+        color = c.accent,
+        modifier = Modifier
+            .background(c.accentSoft, RoundedCornerShape(8.dp))
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+    )
 }

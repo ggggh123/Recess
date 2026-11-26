@@ -25,7 +25,7 @@ class ChatListViewModelTest {
     @Test fun `sessions flow maps summaries to ui state`() = runTest {
         val repo = FakeChatRepository()
         val s1 = repo.createSession("alpha").also { repo.say(it) }
-        val vm = ChatListViewModel(repo)
+        val vm = ChatListViewModel(repo, FakeDeepMode())
         vm.uiState.test {
             val state = awaitItem()
             assertEquals(1, state.sessions.size)
@@ -39,7 +39,7 @@ class ChatListViewModelTest {
     @Test fun `onRename updates title`() = runTest {
         val repo = FakeChatRepository()
         val id = repo.createSession("old").also { repo.say(it) }
-        val vm = ChatListViewModel(repo)
+        val vm = ChatListViewModel(repo, FakeDeepMode())
         vm.onRename(id, "新名字")
         assertEquals("新名字", repo.getSession(id)?.title)
     }
@@ -48,28 +48,28 @@ class ChatListViewModelTest {
         val repo = FakeChatRepository()
         val kept = repo.createSession("有内容").also { repo.say(it) }
         repo.createSession(com.example.personal_studio.domain.chat.ChatTitles.NEW)
-        ChatListViewModel(repo)
+        ChatListViewModel(repo, FakeDeepMode())
         assertEquals(listOf(kept), repo.observeSessions().first().map { it.id })
     }
 
     @Test fun `new conversations start as 新对话`() = runTest {
         val repo = FakeChatRepository()
         var id: Long? = null
-        ChatListViewModel(repo).createNewSession { id = it }
+        ChatListViewModel(repo, FakeDeepMode()).createNewSession { id = it }
         assertEquals("新对话", repo.getSession(id!!)?.title)
     }
 
     @Test fun `onDelete removes session`() = runTest {
         val repo = FakeChatRepository()
         val id = repo.createSession("x")
-        val vm = ChatListViewModel(repo)
+        val vm = ChatListViewModel(repo, FakeDeepMode())
         vm.onDelete(id)
         assertEquals(0, repo.countSessions())
     }
 
     @Test fun `createNewSession yields new id via callback and persists`() = runTest {
         val repo = FakeChatRepository()
-        val vm = ChatListViewModel(repo)
+        val vm = ChatListViewModel(repo, FakeDeepMode())
         var createdId: Long? = null
         vm.createNewSession { createdId = it }
         assertNotNull(createdId)

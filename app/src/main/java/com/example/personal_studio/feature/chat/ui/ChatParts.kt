@@ -42,6 +42,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FactCheck
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowUpward
@@ -141,6 +142,8 @@ fun AiAnswer(
     footer: String? = null,
     onSave: (() -> Unit)? = null,
     onCopy: (() -> Unit)? = null,
+    /** 交给深度模式验算；深度模式不可用或这是深度对话时为 null。 */
+    onVerify: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val c = Tg.colors
@@ -152,7 +155,7 @@ fun AiAnswer(
         Box(Modifier.padding(top = 6.dp)) { content() }
         // Fades in when a streamed answer is saved, instead of popping in under it.
         AnimatedVisibility(
-            visible = footer != null || onSave != null || onCopy != null,
+            visible = footer != null || onSave != null || onCopy != null || onVerify != null,
             enter = fadeIn(tween(220)) + expandVertically(TgMotion.standard()),
             exit = fadeOut(tween(120)) + shrinkVertically(),
         ) {
@@ -164,6 +167,7 @@ fun AiAnswer(
                 }
                 onCopy?.let { SmallAction(Icons.Outlined.ContentCopy, "复制", it) }
                 onSave?.let { SmallAction(Icons.Outlined.BookmarkAdd, "存入知识库", it) }
+                onVerify?.let { SmallAction(Icons.Outlined.FactCheck, "验算", it) }
             }
         }
     }

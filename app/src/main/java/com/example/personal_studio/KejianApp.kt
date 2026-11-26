@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.example.personal_studio.core.util.CrashLogger
+import com.example.personal_studio.data.deep.DeepMode
 import com.example.personal_studio.data.local.datastore.UserPreferencesRepository
 import com.example.personal_studio.data.scanner.OpenCvInitializer
 import com.example.personal_studio.feature.bitddl.DdlPollScheduler
@@ -21,6 +22,7 @@ class KejianApp : Application(), Configuration.Provider {
 
     @Inject lateinit var prefs: UserPreferencesRepository
     @Inject lateinit var workerFactory: HiltWorkerFactory
+    @Inject lateinit var deepMode: DeepMode
     @Inject lateinit var gradesPollScheduler: GradesPollScheduler
     @Inject lateinit var ddlPollScheduler: DdlPollScheduler
     @Inject lateinit var kejian: com.example.personal_studio.feature.kejian.KejianRepository
@@ -30,6 +32,7 @@ class KejianApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         CrashLogger.install(this)
+        appScope.launch { deepMode.reconcile() }
 
         // Off the main thread so the first frame does not wait for it; the scanner calls
         // ensureInitialized() again before use. (The serif fonts are warmed in MainActivity.)

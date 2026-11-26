@@ -1,0 +1,168 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "72f386e0d5d1b13cc608f8156d151f1e",
+    "entities": [
+      {
+        "tableName": "deep_sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`chatId` INTEGER NOT NULL, `remoteId` TEXT, `lastSeq` INTEGER NOT NULL, `phase` TEXT NOT NULL, `draft` TEXT, `round` TEXT, `activity` TEXT, PRIMARY KEY(`chatId`))",
+        "fields": [
+          {
+            "fieldPath": "chatId",
+            "columnName": "chatId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "remoteId",
+            "columnName": "remoteId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastSeq",
+            "columnName": "lastSeq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "phase",
+            "columnName": "phase",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "draft",
+            "columnName": "draft",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "round",
+            "columnName": "round",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "activity",
+            "columnName": "activity",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "chatId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_deep_sessions_remoteId",
+            "unique": true,
+            "columnNames": [
+              "remoteId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_deep_sessions_remoteId` ON `${TABLE_NAME}` (`remoteId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "deep_steps",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`chatId` INTEGER NOT NULL, `answerId` INTEGER NOT NULL, `position` INTEGER NOT NULL, `id` TEXT NOT NULL, `kind` TEXT NOT NULL, `title` TEXT NOT NULL, `detail` TEXT, `output` TEXT, `running` INTEGER NOT NULL, `success` INTEGER, PRIMARY KEY(`chatId`, `answerId`, `position`), FOREIGN KEY(`chatId`) REFERENCES `deep_sessions`(`chatId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "chatId",
+            "columnName": "chatId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "answerId",
+            "columnName": "answerId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "step.id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "step.kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "step.title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "step.detail",
+            "columnName": "detail",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "step.output",
+            "columnName": "output",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "step.running",
+            "columnName": "running",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "step.success",
+            "columnName": "success",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "chatId",
+            "answerId",
+            "position"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": [
+          {
+            "table": "deep_sessions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "chatId"
+            ],
+            "referencedColumns": [
+              "chatId"
+            ]
+          }
+        ]
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '72f386e0d5d1b13cc608f8156d151f1e')"
+    ]
+  }
+}

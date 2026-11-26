@@ -1,5 +1,13 @@
 package com.example.personal_studio.feature.settings.ui
 
+import com.example.personal_studio.feature.settings.vm.DeepModeSettingsViewModel
+import com.example.personal_studio.data.remote.kejian.KejianApi
+import com.example.personal_studio.ui.shell.LocalShellToast
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.PrivacyTip
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -66,6 +74,7 @@ fun AiModelScreen(
     onOpenSystemPrompt: () -> Unit = {},
     vm: SettingsViewModel = hiltViewModel(),
     promptVm: SystemPromptViewModel = hiltViewModel(),
+    deepVm: DeepModeSettingsViewModel = hiltViewModel(),
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val prompt by promptVm.ui.collectAsStateWithLifecycle()
@@ -74,6 +83,16 @@ fun AiModelScreen(
     val custom = state.custom
     val noBuiltInKey = BuiltInLlm.bundled.apiKey.isBlank()
     var showWarning by remember { mutableStateOf(false) }
+    val deepUi by deepVm.ui.collectAsStateWithLifecycle()
+    var confirmDeepDelete by remember { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
+    val toast = LocalShellToast.current
+    LaunchedEffect(deepUi.message) {
+        deepUi.message?.let {
+            toast?.show(it)
+            deepVm.onMessageShown()
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         TgTopBar(route = "AI 模型", subtitle = "AI 模型\n问答、整理知识和学情报告使用", onBack = onBack)
@@ -137,6 +156,22 @@ fun AiModelScreen(
                 )
             }
 
+            TgGroupLabel("深度模式", Modifier.enterUp(true, 110))
+            TgCard(Modifier.enterUp(true, 110)) {
+                TgSettingRow("状态", icon = Icons.Outlined.AutoAwesome, first = true, summary = deepUi.status)
+                TgSettingRow(
+                    "隐私与安全", icon = Icons.Outlined.PrivacyTip,
+                    summary = "题目和图片发到课间服务器，由 OpenAI 的模型处理；最后一次使用 7 天后删除",
+                    onClick = { runCatching { uriHandler.openUri(KejianApi.PRIVACY_URL) } },
+                )
+                TgSettingRow(
+                    "删除服务器上的全部深度对话", icon = Icons.Outlined.DeleteOutline,
+                    summary = if (deepUi.deleting) "正在删除…" else "手机上的记录会保留，之后只能查看",
+                    enabled = !deepUi.deleting,
+                    onClick = { confirmDeepDelete = true },
+                )
+            }
+
             TgGroupLabel("连接", Modifier.enterUp(true, 120))
             ConnectionTestCard(state.testConnection, onTest = vm::onTestConnection, modifier = Modifier.enterUp(true, 120))
 
@@ -151,6 +186,18 @@ fun AiModelScreen(
         }
     }
 
+    if (confirmDeepDelete) {
+        TgConfirmDialog(
+            title = "删除服务器上的深度对话？",
+            message = "会删除你在课间服务器上的全部深度对话（包括 Agent 的工作文件）。手机上的记录保留，但之后只能查看、不能接着问。",
+            confirmLabel = "删除",
+            onConfirm = {
+                confirmDeepDelete = false
+                deepVm.deleteAllRemote()
+            },
+            onDismiss = { confirmDeepDelete = false },
+        )
+    }
     if (showWarning) {
         TgConfirmDialog(
             title = "自定义接口",

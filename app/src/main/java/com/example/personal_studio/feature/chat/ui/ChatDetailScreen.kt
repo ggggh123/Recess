@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -48,12 +49,15 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.personal_studio.data.deep.DeepStep
 import com.example.personal_studio.domain.chat.messagesToDiscard
 import com.example.personal_studio.domain.model.ChatMessage
 import com.example.personal_studio.domain.model.KbDraftSource
@@ -86,6 +90,8 @@ fun ChatDetailScreen(
     onNavigateToKbEntry: (Long) -> Unit,
     /** Open the photo-question camera right away (＋ → 拍题提问). */
     startWithQuickCapture: Boolean = false,
+    /** 打开另一段对话（验算、新开深度对话之后跳过去）。 */
+    onOpenSession: (Long) -> Unit = {},
 ) {
     val vm: ChatDetailViewModel = hiltViewModel(
         creationCallback = { factory: ChatDetailViewModel.Factory -> factory.create(sessionId) }
@@ -114,6 +120,17 @@ fun ChatDetailScreen(
     var showScansPicker by remember { mutableStateOf(false) }
     var confirmRewind by remember { mutableStateOf<ChatMessage?>(null) }
     var composerHeightPx by remember { mutableIntStateOf(0) }
+    val deep = state.deep
+    val deepPrivacyAccepted by vm.deepPrivacyAccepted.collectAsStateWithLifecycle(initialValue = false)
+    val uriHandler = LocalUriHandler.current
+    // 验算和新开深度对话之前，第一次要先确认说明；确认后接着做原来要做的事。
+    // 回调参数为 true 表示用户刚在说明里点了同意，ViewModel 先记下同意再新建深度对话。
+    var pendingDeepAction by remember { mutableStateOf<((Boolean) -> Unit)?>(null) }
+    val withDeepConsent: ((Boolean) -> Unit) -> Unit = { action -> if (deepPrivacyAccepted) action(false) else pendingDeepAction = action }
+    LifecycleResumeEffect(deep != null) {
+        vm.onResumed()
+        onPauseOrDispose { }
+    }
 
     val openGallery = rememberGalleryPicker { path -> pickedForCrop = path }
     // The camera, the scan library and the photo picker cover the page: put the keyboard away.
@@ -155,7 +172,9 @@ fun ChatDetailScreen(
         Column(Modifier.fillMaxSize()) {
             TgTopBar(
                 route = "chat",
-                subtitle = displayTitle(state.session?.title) + "\n" + state.activeModel,
+                subtitle = displayTitle(state.session?.title) + "\n" +
+                    if (deep != null) deepSubtitle(state.deepModel ?: state.messages.lastOrNull { it.role == MessageRole.AI }?.modelUsed)
+                    else state.activeModel,
                 onBack = onBack,
                 trailing = {
                     Box(
@@ -176,9 +195,13 @@ fun ChatDetailScreen(
                 val rows = chatRows(state)
                 if (rows.isEmpty()) {
                     Column(Modifier.align(Alignment.Center).padding(horizontal = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("想问点什么？", style = MaterialTheme.typography.headlineLarge, color = c.text)
+                        Text(if (deep != null) "深度模式" else "想问点什么？", style = MaterialTheme.typography.headlineLarge, color = c.text)
                         Text(
-                            "直接输入问题，或点左下角的 ＋ 拍下题目。好的回答可以存进知识库。",
+                            if (deep != null) {
+                                "题目会发到课间服务器，由 Agent 写代码验算、需要时联网查资料，适合要计算或核对的难题。比普通问答慢一些。"
+                            } else {
+                                "直接输入问题，或点左下角的 ＋ 拍下题目。好的回答可以存进知识库。"
+                            },
                             style = MaterialTheme.typography.bodyMedium, color = c.textSecondary,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(top = 8.dp),
@@ -215,21 +238,31 @@ fun ChatDetailScreen(
                                         clipboard.setText(AnnotatedString(m.contentMarkdown))
                                         toast?.show("已复制")
                                     },
-                                    onEdit = { vm.onStartEdit(m.id) },
-                                    onRewind = {
-                                        if (messagesToDiscard(state.visibleMessages, m.id, inclusive = false).isEmpty()) {
-                                            vm.onRewind(m.id)
-                                        } else {
-                                            confirmRewind = m
+                                    // 深度对话在服务器上只能往后接：不能修改或回溯。
+                                    onEdit = if (deep != null) null else { { vm.onStartEdit(m.id) } },
+                                    onRewind = if (deep != null) null else {
+                                        {
+                                            if (messagesToDiscard(state.visibleMessages, m.id, inclusive = false).isEmpty()) {
+                                                vm.onRewind(m.id)
+                                            } else {
+                                                confirmRewind = m
+                                            }
                                         }
                                     },
                                 )
                             }
+                            is ChatRow.Process -> DeepProcessCard(
+                                steps = row.steps, live = row.live, startedAt = row.startedAt, note = row.note,
+                            )
                             is ChatRow.Answer -> {
                                 val m = row.message
                                 AiAnswer(
                                     // The model that produced this reply, not the one active now.
-                                    model = m?.modelUsed ?: state.activeModel,
+                                    model = if (deep != null) {
+                                        deepModelLabel(m?.modelUsed ?: state.deepModel) ?: "深度模式"
+                                    } else {
+                                        m?.modelUsed ?: state.activeModel
+                                    },
                                     footer = m?.let(::formatDoneLine),
                                     onCopy = m?.let {
                                         {
@@ -238,6 +271,10 @@ fun ChatDetailScreen(
                                         }
                                     },
                                     onSave = m?.let { { startSave(KbDraftSource.FromChatMessage(sessionId = sessionId, aiMessageId = it.id)) } },
+                                    // 普通回答交给深度模式验算：新开一个深度对话，带上原题和这条回答。
+                                    onVerify = m?.takeIf { deep == null && state.deepAvailable && !state.isSending }?.let {
+                                        { withDeepConsent { consent -> vm.onVerify(it.id, consent, onOpenSession) } }
+                                    },
                                 ) {
                                     AnswerContent(
                                         markdown = row.text,
@@ -254,11 +291,20 @@ fun ChatDetailScreen(
             }
 
             ChatErrorNote(state.errorBanner, onDismiss = vm::onDismissError)
-            ChatComposer(
+            deep?.question?.let { q ->
+                DeepQuestionCard(q, onSubmit = { answer -> vm.onAnswerQuestion(q.formId, answer) })
+            }
+            if (deep?.expired == true) {
+                DeepExpiredNote(
+                    onNewConversation = { withDeepConsent { consent -> vm.onNewDeepConversation(consent, onOpenSession) } },
+                    modifier = Modifier.navigationBarsPadding().onSizeChanged { composerHeightPx = it.height },
+                )
+            } else ChatComposer(
                 input = vm.input,
                 images = state.attachedImagePaths,
                 sending = state.isSending,
-                canAttach = state.attachedImagePaths.size < ChatDetailViewModel.MAX_IMAGES,
+                canAttach = state.attachedImagePaths.size <
+                    if (deep != null) com.example.personal_studio.data.deep.DeepMode.MAX_IMAGES else ChatDetailViewModel.MAX_IMAGES,
                 onAttach = { attachMenuOpen = !attachMenuOpen },
                 onRemoveImage = vm::onRemoveAttachedImage,
                 onSend = vm::onSend,
@@ -322,6 +368,17 @@ fun ChatDetailScreen(
                 },
             )
         }
+    }
+
+    pendingDeepAction?.let { action ->
+        DeepPrivacyDialog(
+            onAccept = {
+                pendingDeepAction = null
+                action(true)
+            },
+            onOpenPrivacy = { runCatching { uriHandler.openUri(com.example.personal_studio.data.remote.kejian.KejianApi.PRIVACY_URL) } },
+            onDismiss = { pendingDeepAction = null },
+        )
     }
 
     confirmRewind?.let { m ->
@@ -394,19 +451,50 @@ sealed interface ChatRow {
     ) : ChatRow {
         override val contentType: Any get() = MessageRole.AI
     }
+
+    /**
+     * 深度对话一轮的过程卡，排在用户消息和回答之间。它的 [key] 跟着回答行走（"process-" + 回答行的键），
+     * 所以进行中的卡片在回答保存后原地收成一行摘要，而不是换一张新卡。
+     */
+    data class Process(
+        override val key: Any,
+        val steps: List<DeepStep>,
+        val live: Boolean,
+        val startedAt: Long?,
+        val note: String?,
+    ) : ChatRow {
+        override val contentType: Any get() = "process"
+    }
 }
 
 /** The rows to show, newest first: the streaming answer (if any), then the conversation. */
 internal fun chatRows(state: ChatDetailUiState): List<ChatRow> = buildList {
+    val deep = state.deep
     state.streamingText?.let { text ->
-        add(ChatRow.Answer(state.streamRowKey(state.streamKey), text, streaming = state.isSending, live = true, message = null))
+        val key = state.streamRowKey(state.streamKey)
+        add(ChatRow.Answer(key, text, streaming = state.isSending, live = true, message = null))
+        if (deep != null) {
+            val handover = deep.handover?.second
+            when {
+                // 进行中：有了第一步（或提示）才出现，之前回答行自己显示“思考中”。
+                state.isSending && (deep.liveSteps.isNotEmpty() || deep.note != null) ->
+                    add(ChatRow.Process("process-$key", deep.liveSteps, live = true, startedAt = deep.liveStartedAt, note = deep.note))
+                // 刚结束、回答还在交接：先用这轮的步骤，卡片原地收起。
+                !state.isSending && !handover.isNullOrEmpty() ->
+                    add(ChatRow.Process("process-$key", handover, live = false, startedAt = null, note = null))
+            }
+        }
     }
     state.visibleMessages.asReversed().forEach { m ->
         when (m.role) {
             MessageRole.USER -> add(ChatRow.User(m))
-            MessageRole.AI -> add(
-                ChatRow.Answer(state.answerKey(m.id), m.contentMarkdown, streaming = false, live = m.id in state.answerKeys, message = m),
-            )
+            MessageRole.AI -> {
+                val key = state.answerKey(m.id)
+                add(ChatRow.Answer(key, m.contentMarkdown, streaming = false, live = m.id in state.answerKeys, message = m))
+                deep?.stepsFor(m.id)?.takeIf { it.isNotEmpty() }?.let { steps ->
+                    add(ChatRow.Process("process-$key", steps, live = false, startedAt = null, note = null))
+                }
+            }
             MessageRole.SYSTEM -> Unit
         }
     }

@@ -87,6 +87,7 @@ fun AppNavHost(
                 onBack = { navController.popBackStack() },
                 onNavigateToKbEntry = { entryId -> navController.navigate(NavRoutes.kbDetail(entryId)) },
                 startWithQuickCapture = backStack.arguments?.getBoolean("capture") ?: false,
+                onOpenSession = { id -> navController.navigate(NavRoutes.chatDetail(id)) },
             )
         }
 

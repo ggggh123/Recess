@@ -37,6 +37,7 @@ class ChatDetailViewModelTest {
             send = SendMessageUseCase(repo, llm),
             titleGen = GenerateTitleUseCase(repo, llm),
             prefs = FakeUserPreferencesRepository(),
+            deepMode = FakeDeepMode(),
         )
         vm.uiState.test {
             awaitItem()  // initial empty
@@ -75,6 +76,7 @@ class ChatDetailViewModelTest {
             send = SendMessageUseCase(repo, llm),
             titleGen = GenerateTitleUseCase(repo, llm),
             prefs = FakeUserPreferencesRepository(),
+            deepMode = FakeDeepMode(),
         )
         vm.uiState.test {
             awaitItem()
@@ -100,6 +102,7 @@ class ChatDetailViewModelTest {
             send = SendMessageUseCase(repo, llm),
             titleGen = GenerateTitleUseCase(repo, llm),
             prefs = prefs,
+            deepMode = FakeDeepMode(),
         )
 
     @Test fun `the user's own system prompt is sent, the built-in one otherwise`() = runTest {
@@ -256,6 +259,7 @@ class ChatDetailViewModelTest {
             send = SendMessageUseCase(repo, llm),
             titleGen = GenerateTitleUseCase(repo, llm),
             prefs = FakeUserPreferencesRepository(),
+            deepMode = FakeDeepMode(),
         )
         vm.uiState.test {
             awaitItem()

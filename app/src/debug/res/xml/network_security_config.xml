@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  只用于调试版：在正式配置的基础上，放行本机 127.0.0.1 的明文流量，
+  让深度模式联调时可以通过 adb reverse 连电脑上的网关（-PdeepGateway=http://127.0.0.1:18787）。
+  正式版仍用 src/main 下的配置。
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">jwms.bit.edu.cn</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>
