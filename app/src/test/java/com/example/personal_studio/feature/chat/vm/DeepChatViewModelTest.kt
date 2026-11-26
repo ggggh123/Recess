@@ -1,6 +1,8 @@
 package com.example.personal_studio.feature.chat.vm
 
+import com.example.personal_studio.data.deep.DeepChoice
 import com.example.personal_studio.data.deep.DeepConversation
+import com.example.personal_studio.data.deep.DeepModelOption
 import com.example.personal_studio.data.deep.DeepLive
 import com.example.personal_studio.data.deep.DeepQuestion
 import com.example.personal_studio.data.deep.DeepQuestionField
@@ -208,6 +210,30 @@ class DeepChatViewModelTest {
         assertTrue(rows[0] is ChatRow.Answer)
         assertEquals("process-2", (rows[1] as ChatRow.Process).key)
         assertTrue(rows[2] is ChatRow.User)
+    }
+
+    @Test fun `the model choice follows the server list and goes out with the message`() = runTest {
+        val repo = FakeChatRepository()
+        val sid = repo.createSession("新对话")
+        val models = listOf(
+            DeepModelOption("gpt-6.2-sol", "GPT-6.2 Sol", "均衡", listOf("low", "medium", "high"), isDefault = true),
+            DeepModelOption("gpt-6-luna", "GPT-6 Luna", "最快", listOf("low", "medium", "high"), isDefault = false),
+        )
+        val deep = deepFor(sid, DeepStatus.Available("gpt-6.2-sol", models, "medium"))
+        val vm = vm(repo, sid, deep)
+        // 没选过：默认模型、默认推理等级。
+        assertEquals(DeepChoice("gpt-6.2-sol", "medium"), vm.uiState.value.deepChoice)
+        vm.onSelectDeepChoice(DeepChoice("gpt-6-luna", "high"))
+        advanceUntilIdle()
+        assertEquals(DeepChoice("gpt-6-luna", "high"), deep.savedChoice.value)
+        vm.onInputChanged("算一下")
+        vm.onSend()
+        advanceUntilIdle()
+        assertEquals(DeepChoice("gpt-6-luna", "high"), deep.sentChoices.single())
+        // 选过的模型不再开放时退回默认。
+        deep.status.value = DeepStatus.Available("gpt-6.2-sol", models.take(1), "medium")
+        assertEquals(DeepChoice("gpt-6.2-sol", "high"), vm.uiState.value.deepChoice)
+        assertEquals("GPT-6 Luna · 推理 高", com.example.personal_studio.feature.chat.ui.choiceLabel(models, DeepChoice("gpt-6-luna", "high")))
     }
 
     @Test fun `labels, summaries and answers`() {

@@ -24,6 +24,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.ExpandLess
@@ -56,6 +57,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.personal_studio.data.deep.DeepChoice
+import com.example.personal_studio.data.deep.DeepModelOption
 import com.example.personal_studio.data.deep.DeepQuestion
 import com.example.personal_studio.data.deep.DeepStep
 import com.example.personal_studio.data.deep.DeepStepKind
@@ -389,5 +392,107 @@ fun DeepExpiredNote(onNewConversation: () -> Unit, modifier: Modifier = Modifier
             )
         }
         TgPillButton("新开深度对话", onClick = onNewConversation, style = PillStyle.SECONDARY, modifier = Modifier.fillMaxWidth())
+    }
+}
+
+/** 推理等级的中文名。 */
+internal fun effortLabel(effort: String?): String = when (effort) {
+    "none" -> "不思考"
+    "low" -> "低"
+    "medium" -> "中"
+    "high" -> "高"
+    "xhigh" -> "很高"
+    "max" -> "最高"
+    null -> "默认"
+    else -> effort
+}
+
+/** 输入框上方标签上的字：“GPT-6.2 Sol · 推理 中”。 */
+internal fun choiceLabel(models: List<DeepModelOption>, choice: DeepChoice): String {
+    val name = models.firstOrNull { it.id == choice.model }?.name ?: deepModelLabel(choice.model) ?: choice.model
+    return if (choice.effort == null) name else "$name · 推理 ${effortLabel(choice.effort)}"
+}
+
+/** 深度对话输入框上方的小标签：当前的模型和推理等级，点开换。 */
+@Composable
+fun DeepChoiceChip(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val c = Tg.colors
+    Row(
+        modifier
+            .padding(start = 16.dp, top = 4.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(role = Role.Button, onClickLabel = "换模型或推理等级", onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(Icons.Outlined.Tune, contentDescription = null, tint = c.accent, modifier = Modifier.size(14.dp))
+        Text(label, style = MaterialTheme.typography.bodySmall, color = c.textSecondary, maxLines = 1)
+        Icon(Icons.Outlined.ExpandMore, contentDescription = null, tint = c.textTertiary, modifier = Modifier.size(16.dp))
+    }
+}
+
+/**
+ * 选模型和推理等级：上面是模型（名字和一句话说明），下面是推理等级。选了立即生效（从下一条消息起），
+ * 换模型时如果原来的推理等级新模型不支持，换成它支持的中间一档。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun DeepChoiceSheet(
+    models: List<DeepModelOption>,
+    choice: DeepChoice,
+    onSelect: (DeepChoice) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val c = Tg.colors
+    val current = models.firstOrNull { it.id == choice.model }
+    com.example.personal_studio.ui.components.TgBottomSheet(onDismiss = onDismiss, header = "模型与推理等级") {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            models.forEach { m ->
+                val selected = m.id == choice.model
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable(role = Role.RadioButton) {
+                            val effort = choice.effort?.takeIf { it in m.efforts }
+                                ?: m.efforts.getOrNull(m.efforts.size / 2)
+                            onSelect(DeepChoice(m.id, effort))
+                        }
+                        .padding(horizontal = 8.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(m.name, style = MaterialTheme.typography.bodyLarge, color = c.text)
+                        if (m.description.isNotBlank()) {
+                            Text(m.description, style = MaterialTheme.typography.bodySmall, color = c.textSecondary)
+                        }
+                    }
+                    if (selected) Icon(Icons.Outlined.Check, contentDescription = "当前模型", tint = c.accent, modifier = Modifier.size(20.dp))
+                }
+            }
+            val efforts = current?.efforts.orEmpty()
+            if (efforts.isNotEmpty()) {
+                Text(
+                    "推理等级", style = MaterialTheme.typography.labelLarge, color = c.textSecondary,
+                    modifier = Modifier.padding(start = 8.dp, top = 16.dp, bottom = 8.dp),
+                )
+                FlowRow(
+                    Modifier.padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    efforts.forEach { e ->
+                        TgChip(label = effortLabel(e), selected = e == choice.effort, onClick = { onSelect(choice.copy(effort = e)) })
+                    }
+                }
+                Text(
+                    "越高想得越久：回答更仔细，也更慢、更耗额度。从下一条消息起生效。",
+                    style = MaterialTheme.typography.bodySmall, color = c.textTertiary,
+                    modifier = Modifier.padding(start = 8.dp, top = 10.dp),
+                )
+            }
+        }
     }
 }

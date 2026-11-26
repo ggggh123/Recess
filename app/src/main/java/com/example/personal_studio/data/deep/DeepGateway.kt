@@ -88,7 +88,7 @@ internal class DeepGateway(
 
     suspend fun status(): DeepStatus {
         val reply = json("status")
-        return if (reply["available"] == JsonPrimitive(true)) DeepStatus.Available(reply.string("model"))
+        return if (reply["available"] == JsonPrimitive(true)) DeepStatus.Available(reply.string("model"), modelOptions(reply), reply.string("defaultEffort"))
         else DeepStatus.Unavailable(reply.string("reason") ?: "unavailable", reply.string("message") ?: "深度模式暂不可用")
     }
 
@@ -98,10 +98,12 @@ internal class DeepGateway(
         return items.map { (it as? JsonObject)?.field("id") ?: throw IOException("服务器会话编号无效") }
     }
 
-    suspend fun send(id: String, userId: Long, text: String, images: List<String>): String =
+    suspend fun send(id: String, userId: Long, text: String, images: List<String>, model: String? = null, effort: String? = null): String =
         json("sessions/$id/messages", "POST", buildJsonObject {
             put("clientMessageId", "chat-$userId")
             put("text", text)
+            model?.let { put("model", it) }
+            effort?.let { put("effort", it) }
             putJsonArray("images") {
                 images.forEach { add(buildJsonObject { put("mime", "image/jpeg"); put("data", it) }) }
             }
@@ -144,3 +146,17 @@ internal class DeepGateway(
         awaitClose { call.cancel(); reader.cancel() }
     }
 }
+
+/** 服务器给的模型清单；格式不对的项跳过，旧服务器没有这个字段时为空。 */
+internal fun modelOptions(reply: JsonObject): List<DeepModelOption> =
+    (reply["models"] as? JsonArray).orEmpty().mapNotNull { item ->
+        val m = item as? JsonObject ?: return@mapNotNull null
+        val id = m.string("id") ?: return@mapNotNull null
+        DeepModelOption(
+            id = id,
+            name = m.string("name") ?: id,
+            description = m.string("description").orEmpty(),
+            efforts = (m["efforts"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull },
+            isDefault = (m["default"] as? JsonPrimitive)?.booleanOrNull == true,
+        )
+    }

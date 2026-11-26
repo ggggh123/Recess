@@ -14,6 +14,9 @@ internal data class Draft(
     val paths: List<String>,
     val afterMessage: Long,
     val userId: Long? = null,
+    /** 这条消息选的模型和推理等级；重发同一条时沿用，不跟着后来的选择变。 */
+    val model: String? = null,
+    val effort: String? = null,
 )
 
 internal enum class Phase { IDLE, PENDING, POSTING, RUNNING, FINISHING, FINISHED, EXPIRED, DELETING }

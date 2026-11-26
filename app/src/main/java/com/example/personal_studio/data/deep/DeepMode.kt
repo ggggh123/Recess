@@ -24,6 +24,11 @@ interface DeepMode {
 
     suspend fun acceptPrivacy()
 
+    /** 上次选的模型和推理等级；没选过为 null（用服务器的默认值）。 */
+    val choice: Flow<DeepChoice?>
+
+    suspend fun setChoice(choice: DeepChoice)
+
     /** 所有深度对话（按问答会话 ID），供列表页打标签、显示“进行中”。 */
     val conversations: StateFlow<Map<Long, DeepConversation>>
 
@@ -43,7 +48,7 @@ interface DeepMode {
      * 发一条消息：先把用户消息存进问答表，再（必要时先建服务器会话）发给服务器，然后开始接收事件。
      * 图片是问答里已有的本地图片路径，发送前转成 JPEG（长边不超过 2048 像素），每条最多 [MAX_IMAGES] 张。
      */
-    suspend fun send(chatSessionId: Long, text: String, imagePaths: List<String>): DeepSendResult
+    suspend fun send(chatSessionId: Long, text: String, imagePaths: List<String>, choice: DeepChoice? = null): DeepSendResult
 
     /** 中止当前一轮（服务器上正在跑的命令一并结束）。结果以 [DeepLive.finished] 体现。 */
     suspend fun stop(chatSessionId: Long)
@@ -76,10 +81,39 @@ interface DeepMode {
 
 sealed interface DeepStatus {
     data object Unknown : DeepStatus
-    /** [model] 是服务器报告的模型 ID，例如 gpt-6.2-sol。 */
-    data class Available(val model: String?) : DeepStatus
+    /**
+     * [model] 是服务器的默认模型 ID，例如 gpt-6.2-sol；[models] 是开放给用户选的模型（默认的排第一），
+     * [defaultEffort] 是默认推理等级。旧服务器不给清单时两者为空，界面不显示选择。
+     */
+    data class Available(
+        val model: String?,
+        val models: List<DeepModelOption> = emptyList(),
+        val defaultEffort: String? = null,
+    ) : DeepStatus
     /** [message] 是可以直接显示的中文说明（后台关闭、主进程未登录、连不上等）。 */
     data class Unavailable(val reason: String, val message: String) : DeepStatus
+}
+
+/** 一个可选的模型：名字、一句话说明、可选的推理等级（low、medium、high……）。 */
+data class DeepModelOption(
+    val id: String,
+    val name: String,
+    val description: String,
+    val efforts: List<String>,
+    val isDefault: Boolean,
+)
+
+/** 用户选的模型和推理等级，从下一条消息起生效。 */
+data class DeepChoice(val model: String, val effort: String?)
+
+/** 按服务器的清单核对：选过的还开放就用它，否则用默认模型和默认推理等级；没有清单时为 null。 */
+fun DeepStatus.Available.effectiveChoice(saved: DeepChoice?): DeepChoice? {
+    val default = models.firstOrNull { it.isDefault } ?: models.firstOrNull() ?: return null
+    val model = models.firstOrNull { it.id == saved?.model } ?: default
+    val effort = saved?.effort?.takeIf { it in model.efforts }
+        ?: defaultEffort?.takeIf { it in model.efforts }
+        ?: model.efforts.firstOrNull()
+    return DeepChoice(model.id, effort)
 }
 
 data class DeepConversation(

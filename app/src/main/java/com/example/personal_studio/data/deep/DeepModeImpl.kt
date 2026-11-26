@@ -50,6 +50,10 @@ internal class DeepModeImpl @Inject constructor(
 
     override suspend fun acceptPrivacy() = prefs.accept()
 
+    override val choice: Flow<DeepChoice?> get() = prefs.choice
+
+    override suspend fun setChoice(choice: DeepChoice) = prefs.setChoice(choice)
+
     override suspend fun refreshStatus() {
         availability.value = try { gateway.status() } catch (e: IOException) {
             DeepStatus.Unavailable((e as? GatewayError)?.code ?: "offline", e.description())
@@ -102,7 +106,7 @@ internal class DeepModeImpl @Inject constructor(
         if (reader != currentCoroutineContext()[Job]) reader?.cancel()
     }
 
-    override suspend fun send(chatSessionId: Long, text: String, imagePaths: List<String>): DeepSendResult {
+    override suspend fun send(chatSessionId: Long, text: String, imagePaths: List<String>, choice: DeepChoice?): DeepSendResult {
         if (imagePaths.size > DeepMode.MAX_IMAGES) return DeepSendResult.Failed("每条消息最多附 4 张图片", null)
         if (text.isBlank() && imagePaths.isEmpty()) return DeepSendResult.Failed("请填写问题或选择图片", null)
         return scope.async {
@@ -125,7 +129,7 @@ internal class DeepModeImpl @Inject constructor(
                 if (chat.getSession(chatSessionId) == null) return@withLock DeepSendResult.Failed("对话已删除", null)
                 val pending = if (same) row else {
                     val last = chat.listMessages(chatSessionId).maxOfOrNull { it.id } ?: 0
-                    write(row.copy(phase = Phase.PENDING, draft = Draft(text, imagePaths, last), round = null))
+                    write(row.copy(phase = Phase.PENDING, draft = Draft(text, imagePaths, last, model = choice?.model, effort = choice?.effort), round = null))
                 }
                 submit(pending)
             }
@@ -159,10 +163,11 @@ internal class DeepModeImpl @Inject constructor(
             }
             if (row.phase != Phase.POSTING) {
                 if (status.value !is DeepStatus.Available) refreshStatus()
-                val round = Round(userId, System.currentTimeMillis(), (status.value as? DeepStatus.Available)?.model)
+                // 回答上方标的是这一轮实际用的模型：选过就用选的，否则用服务器的默认模型。
+                val round = Round(userId, System.currentTimeMillis(), draft.model ?: (status.value as? DeepStatus.Available)?.model)
                 row = write(row.copy(phase = Phase.POSTING, round = round))
             }
-            val turn = gateway.send(remote, userId, draft.text, images)
+            val turn = gateway.send(remote, userId, draft.text, images, draft.model, draft.effort)
             attach(row, turn)
             return DeepSendResult.Sent(userId)
         } catch (e: IOException) {

@@ -1,5 +1,6 @@
 package com.example.personal_studio.feature.chat.vm
 
+import com.example.personal_studio.data.deep.DeepChoice
 import com.example.personal_studio.data.deep.DeepConversation
 import com.example.personal_studio.data.deep.DeepLive
 import com.example.personal_studio.data.deep.DeepMode
@@ -23,6 +24,10 @@ class FakeDeepMode(
     override val privacyAccepted: Flow<Boolean> = accepted
     override suspend fun acceptPrivacy() { accepted.value = true }
 
+    val savedChoice = MutableStateFlow<DeepChoice?>(null)
+    override val choice: Flow<DeepChoice?> = savedChoice
+    override suspend fun setChoice(choice: DeepChoice) { savedChoice.value = choice }
+
     override val conversations = MutableStateFlow<Map<Long, DeepConversation>>(emptyMap())
 
     /** createConversation 用它建本地会话（测试里通常是 FakeChatRepository.createSession）。 */
@@ -43,8 +48,10 @@ class FakeDeepMode(
 
     val sent = mutableListOf<Triple<Long, String, List<String>>>()
     var sendResult: suspend (Long, String, List<String>) -> DeepSendResult = { _, _, _ -> DeepSendResult.Sent(0) }
-    override suspend fun send(chatSessionId: Long, text: String, imagePaths: List<String>): DeepSendResult {
+    val sentChoices = mutableListOf<DeepChoice?>()
+    override suspend fun send(chatSessionId: Long, text: String, imagePaths: List<String>, choice: DeepChoice?): DeepSendResult {
         sent += Triple(chatSessionId, text, imagePaths)
+        sentChoices += choice
         return sendResult(chatSessionId, text, imagePaths)
     }
 

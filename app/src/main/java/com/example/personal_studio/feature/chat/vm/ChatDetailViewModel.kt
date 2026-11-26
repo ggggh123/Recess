@@ -7,7 +7,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.personal_studio.core.llm.CuratedModels
 import com.example.personal_studio.core.llm.activeEndpoint
+import com.example.personal_studio.data.deep.DeepChoice
 import com.example.personal_studio.data.deep.DeepLive
+import com.example.personal_studio.data.deep.DeepModelOption
+import com.example.personal_studio.data.deep.effectiveChoice
 import com.example.personal_studio.data.deep.DeepMode
 import com.example.personal_studio.data.deep.DeepQuestion
 import com.example.personal_studio.data.deep.DeepSendResult
@@ -31,6 +34,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
@@ -76,6 +80,10 @@ data class ChatDetailUiState(
     val deepAvailable: Boolean = false,
     /** 深度模式当前的模型 ID（标题栏和新回答的模型行用）。 */
     val deepModel: String? = null,
+    /** 开放给用户选的模型（服务器给的清单）。 */
+    val deepModels: List<DeepModelOption> = emptyList(),
+    /** 当前选的模型和推理等级，从下一条消息起生效；服务器没给清单时为 null。 */
+    val deepChoice: DeepChoice? = null,
 ) {
     /**
      * [messages] without a just-saved answer that the streaming row still shows, so the answer
@@ -200,12 +208,15 @@ class ChatDetailViewModel @AssistedInject constructor(
                 }
             }
             .launchIn(viewModelScope)
-        deepMode.status
-            .onEach { s ->
+        combine(deepMode.status, deepMode.choice) { s, saved -> s to saved }
+            .onEach { (s, saved) ->
+                val available = s as? DeepStatus.Available
                 _uiState.update {
                     it.copy(
-                        deepAvailable = s is DeepStatus.Available,
-                        deepModel = (s as? DeepStatus.Available)?.model ?: it.deepModel,
+                        deepAvailable = available != null,
+                        deepModel = available?.model ?: it.deepModel,
+                        deepModels = available?.models ?: it.deepModels,
+                        deepChoice = available?.effectiveChoice(saved) ?: it.deepChoice,
                     )
                 }
             }
@@ -283,7 +294,7 @@ class ChatDetailViewModel @AssistedInject constructor(
         input.clearText()
         _uiState.update { it.copy(attachedImagePaths = emptyList(), errorBanner = null) }
         sendJob = viewModelScope.launch {
-            when (val r = deepMode.send(sessionId, text, imagePaths)) {
+            when (val r = deepMode.send(sessionId, text, imagePaths, _uiState.value.deepChoice)) {
                 is DeepSendResult.Sent -> Unit
                 is DeepSendResult.Failed -> {
                     // 没发出去：原文和图片放回输入框，再按发送就是重发同一条（数据层不会重复保存）。
@@ -297,6 +308,12 @@ class ChatDetailViewModel @AssistedInject constructor(
                 }
             }
         }
+    }
+
+    /** 换模型或推理等级：从下一条消息起生效，新开的深度对话和验算也默认用它。 */
+    fun onSelectDeepChoice(choice: DeepChoice) {
+        _uiState.update { it.copy(deepChoice = choice) }
+        viewModelScope.launch { deepMode.setChoice(choice) }
     }
 
     /** 回答 Agent 的提问。 */
@@ -330,7 +347,7 @@ class ChatDetailViewModel @AssistedInject constructor(
             repo.renameSession(id, verifyTitle(question?.contentMarkdown))
             onCreated(id)
             // 新对话页的 ViewModel 会接着显示这一轮；发送失败的提示也在那边显示。
-            deepMode.send(id, seed, images)
+            deepMode.send(id, seed, images, _uiState.value.deepChoice)
         }
     }
 

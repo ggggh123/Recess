@@ -20,7 +20,19 @@ internal class DeepPrefs @Inject constructor(@ApplicationContext context: Contex
     private val store = context.deepPrefs
     private val accepted = booleanPreferencesKey("privacy_accepted")
     private val device = stringPreferencesKey("device_key")
+    private val chosenModel = stringPreferencesKey("choice_model")
+    private val chosenEffort = stringPreferencesKey("choice_effort")
     val privacyAccepted = store.data.map { it[accepted] == true }
+
+    /** 上次选的模型和推理等级（新开的深度对话和验算也用它）。 */
+    val choice = store.data.map { p -> p[chosenModel]?.let { DeepChoice(it, p[chosenEffort]) } }
+
+    suspend fun setChoice(choice: DeepChoice) {
+        store.edit {
+            it[chosenModel] = choice.model
+            if (choice.effort == null) it.remove(chosenEffort) else it[chosenEffort] = choice.effort
+        }
+    }
 
     suspend fun accept() { store.edit { it[accepted] = true } }
 

@@ -126,6 +126,7 @@ fun ChatDetailScreen(
     // 验算和新开深度对话之前，第一次要先确认说明；确认后接着做原来要做的事。
     // 回调参数为 true 表示用户刚在说明里点了同意，ViewModel 先记下同意再新建深度对话。
     var pendingDeepAction by remember { mutableStateOf<((Boolean) -> Unit)?>(null) }
+    var choiceSheetOpen by remember { mutableStateOf(false) }
     val withDeepConsent: ((Boolean) -> Unit) -> Unit = { action -> if (deepPrivacyAccepted) action(false) else pendingDeepAction = action }
     LifecycleResumeEffect(deep != null) {
         vm.onResumed()
@@ -173,7 +174,10 @@ fun ChatDetailScreen(
             TgTopBar(
                 route = "chat",
                 subtitle = displayTitle(state.session?.title) + "\n" +
-                    if (deep != null) deepSubtitle(state.deepModel ?: state.messages.lastOrNull { it.role == MessageRole.AI }?.modelUsed)
+                    if (deep != null) {
+                        val id = state.deepChoice?.model ?: state.deepModel ?: state.messages.lastOrNull { it.role == MessageRole.AI }?.modelUsed
+                        "深度模式 · " + (modelName(state, id) ?: "Agent")
+                    }
                     else state.activeModel,
                 onBack = onBack,
                 trailing = {
@@ -259,7 +263,7 @@ fun ChatDetailScreen(
                                 AiAnswer(
                                     // The model that produced this reply, not the one active now.
                                     model = if (deep != null) {
-                                        deepModelLabel(m?.modelUsed ?: state.deepModel) ?: "深度模式"
+                                        modelName(state, m?.modelUsed ?: state.deepChoice?.model ?: state.deepModel) ?: "深度模式"
                                     } else {
                                         m?.modelUsed ?: state.activeModel
                                     },
@@ -291,6 +295,14 @@ fun ChatDetailScreen(
             }
 
             ChatErrorNote(state.errorBanner, onDismiss = vm::onDismissError)
+            // 深度对话：输入框上方是当前的模型和推理等级，点开换。
+            val choice = state.deepChoice
+            if (deep != null && deep.expired.not() && choice != null && state.deepModels.isNotEmpty()) {
+                DeepChoiceChip(
+                    label = choiceLabel(state.deepModels, choice),
+                    onClick = { choiceSheetOpen = true },
+                )
+            }
             deep?.question?.let { q ->
                 DeepQuestionCard(q, onSubmit = { answer -> vm.onAnswerQuestion(q.formId, answer) })
             }
@@ -366,6 +378,17 @@ fun ChatDetailScreen(
                     leaveComposer()
                     showScansPicker = true
                 },
+            )
+        }
+    }
+
+    if (choiceSheetOpen) {
+        state.deepChoice?.let { current ->
+            DeepChoiceSheet(
+                models = state.deepModels,
+                choice = current,
+                onSelect = vm::onSelectDeepChoice,
+                onDismiss = { choiceSheetOpen = false },
             )
         }
     }
@@ -506,6 +529,10 @@ internal fun chatRows(state: ChatDetailUiState): List<ChatRow> = buildList {
  */
 internal fun sentNewMessage(seen: Long?, latest: Long?): Boolean =
     seen != null && latest != null && latest != seen
+
+/** 模型 ID 换成名字：优先用服务器清单里的名字，否则按 ID 推断。 */
+internal fun modelName(state: ChatDetailUiState, id: String?): String? =
+    state.deepModels.firstOrNull { it.id == id }?.name ?: deepModelLabel(id)
 
 /** Placeholder names (also the old "session #NNN") read as "新对话". */
 internal fun displayTitle(title: String?): String =
