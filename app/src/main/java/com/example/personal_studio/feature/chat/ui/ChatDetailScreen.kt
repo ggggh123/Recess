@@ -58,6 +58,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.personal_studio.data.deep.DeepStep
+import com.example.personal_studio.data.deep.matches
 import com.example.personal_studio.domain.chat.messagesToDiscard
 import com.example.personal_studio.domain.model.ChatMessage
 import com.example.personal_studio.domain.model.KbDraftSource
@@ -532,7 +533,7 @@ internal fun sentNewMessage(seen: Long?, latest: Long?): Boolean =
 
 /** 模型 ID 换成名字：优先用服务器清单里的名字，否则按 ID 推断。 */
 internal fun modelName(state: ChatDetailUiState, id: String?): String? =
-    state.deepModels.firstOrNull { it.id == id }?.name ?: deepModelLabel(id)
+    state.deepModels.firstOrNull { it.matches(id) }?.name ?: deepModelLabel(id)
 
 /** Placeholder names (also the old "session #NNN") read as "新对话". */
 internal fun displayTitle(title: String?): String =

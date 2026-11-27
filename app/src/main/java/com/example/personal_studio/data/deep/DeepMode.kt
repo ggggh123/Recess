@@ -94,14 +94,22 @@ sealed interface DeepStatus {
     data class Unavailable(val reason: String, val message: String) : DeepStatus
 }
 
-/** 一个可选的模型：名字、一句话说明、可选的推理等级（low、medium、high……）。 */
+/**
+ * 一个可选的模型：ID（提供方/模型，如 anthropic/claude-opus-5-5）、名字、一句话说明、开放的推理等级
+ * （low、medium、high……，可能为空）和这个模型的默认档。都由后台设定。
+ */
 data class DeepModelOption(
     val id: String,
     val name: String,
     val description: String,
     val efforts: List<String>,
     val isDefault: Boolean,
+    val defaultEffort: String? = null,
 )
+
+/** 同一个模型：完全相同，或者是旧版本存下的不带提供方的 ID（gpt-6.2-sol 对 openai/gpt-6.2-sol）。 */
+fun DeepModelOption.matches(id: String?): Boolean =
+    id != null && (this.id == id || (!id.contains('/') && this.id.substringAfter('/') == id))
 
 /** 用户选的模型和推理等级，从下一条消息起生效。 */
 data class DeepChoice(val model: String, val effort: String?)
@@ -109,8 +117,9 @@ data class DeepChoice(val model: String, val effort: String?)
 /** 按服务器的清单核对：选过的还开放就用它，否则用默认模型和默认推理等级；没有清单时为 null。 */
 fun DeepStatus.Available.effectiveChoice(saved: DeepChoice?): DeepChoice? {
     val default = models.firstOrNull { it.isDefault } ?: models.firstOrNull() ?: return null
-    val model = models.firstOrNull { it.id == saved?.model } ?: default
+    val model = models.firstOrNull { it.matches(saved?.model) } ?: default
     val effort = saved?.effort?.takeIf { it in model.efforts }
+        ?: model.defaultEffort?.takeIf { it in model.efforts }
         ?: defaultEffort?.takeIf { it in model.efforts }
         ?: model.efforts.firstOrNull()
     return DeepChoice(model.id, effort)

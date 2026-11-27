@@ -6,6 +6,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -59,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.personal_studio.data.deep.DeepChoice
 import com.example.personal_studio.data.deep.DeepModelOption
+import com.example.personal_studio.data.deep.matches
 import com.example.personal_studio.data.deep.DeepQuestion
 import com.example.personal_studio.data.deep.DeepStep
 import com.example.personal_studio.data.deep.DeepStepKind
@@ -245,13 +247,35 @@ private fun summaryLabel(step: DeepStep): String = when (step.kind) {
     DeepStepKind.OTHER -> "其他"
 }
 
-/** 服务器的模型 ID 换成给人看的名字：gpt-6.2-sol → GPT-6.2 Sol；认不出的原样返回。 */
+/**
+ * 服务器的模型 ID 换成给人看的名字，只在清单里找不到这个模型时用（比如旧消息、后台已关掉的模型）：
+ * openai/gpt-6.2-sol → GPT-6.2 Sol，anthropic/claude-opus-5-5 → Claude Opus 5.5；认不出的去掉提供方后原样返回。
+ */
 internal fun deepModelLabel(id: String?): String? {
     if (id.isNullOrBlank()) return null
-    val parts = id.split('-')
-    if (parts.size < 2 || !parts[0].equals("gpt", ignoreCase = true)) return id
-    val rest = parts.drop(2).joinToString(" ") { p -> p.replaceFirstChar { it.uppercaseChar() } }
-    return ("GPT-" + parts[1] + if (rest.isEmpty()) "" else " $rest")
+    val bare = id.substringAfterLast('/')
+    val parts = bare.split('-')
+    val cap = { p: String -> p.replaceFirstChar { it.uppercaseChar() } }
+    if (parts.size >= 2 && parts[0].equals("gpt", ignoreCase = true)) {
+        val rest = parts.drop(2).joinToString(" ", transform = cap)
+        return "GPT-" + parts[1] + if (rest.isEmpty()) "" else " $rest"
+    }
+    if (parts.size >= 2 && parts[0].equals("claude", ignoreCase = true)) {
+        // claude-opus-5-5-fast → Claude Opus 5.5 Fast；末尾的发布日期（20251001）不显示。
+        val words = mutableListOf("Claude")
+        val version = mutableListOf<String>()
+        for (p in parts.drop(1)) when {
+            p.length == 8 && p.all(Char::isDigit) -> Unit
+            p.all(Char::isDigit) -> version += p
+            else -> {
+                if (version.isNotEmpty()) { words += version.joinToString("."); version.clear() }
+                words += cap(p)
+            }
+        }
+        if (version.isNotEmpty()) words += version.joinToString(".")
+        return words.joinToString(" ")
+    }
+    return bare
 }
 
 /** 标题栏第二行：“深度模式 · GPT-6.2 Sol”，不知道模型时只写“深度模式”。 */
@@ -370,7 +394,7 @@ fun DeepPrivacyDialog(onAccept: () -> Unit, onOpenPrivacy: () -> Unit, onDismiss
 }
 
 internal const val DEEP_PRIVACY_TEXT =
-    "深度模式下，你的题目和图片会发到课间服务器，由服务器上的 Agent 调用 OpenAI 的模型处理；" +
+    "深度模式下，你的题目和图片会发到课间服务器，由服务器上的 Agent 调用你选的模型处理（会交给这个模型的提供方）；" +
         "它会在一个断网的沙箱里运行代码，需要时联网搜索、读网页。\n\n" +
         "服务器上的会话在最后一次使用 7 天后删除，手机上的记录不受影响。不会发送学号、学校账号或其他学校数据。"
 
@@ -409,7 +433,7 @@ internal fun effortLabel(effort: String?): String = when (effort) {
 
 /** 输入框上方标签上的字：“GPT-6.2 Sol · 推理 中”。 */
 internal fun choiceLabel(models: List<DeepModelOption>, choice: DeepChoice): String {
-    val name = models.firstOrNull { it.id == choice.model }?.name ?: deepModelLabel(choice.model) ?: choice.model
+    val name = models.firstOrNull { it.matches(choice.model) }?.name ?: deepModelLabel(choice.model) ?: choice.model
     return if (choice.effort == null) name else "$name · 推理 ${effortLabel(choice.effort)}"
 }
 
@@ -432,9 +456,29 @@ fun DeepChoiceChip(label: String, onClick: () -> Unit, modifier: Modifier = Modi
     }
 }
 
+/** 模型按系列分组的小标题：openai → GPT 系列，anthropic → Claude 系列；ID 不带提供方时为 null。 */
+internal fun deepSeriesLabel(id: String): String? {
+    val provider = id.substringBefore('/', missingDelimiterValue = "")
+    return when (provider) {
+        "" -> null
+        "openai" -> "GPT 系列"
+        "anthropic" -> "Claude 系列"
+        else -> provider
+    }
+}
+
 /**
- * 选模型和推理等级：上面是模型（名字和一句话说明），下面是推理等级。选了立即生效（从下一条消息起），
- * 换模型时如果原来的推理等级新模型不支持，换成它支持的中间一档。
+ * 把模型按系列分组，组的先后和组内顺序都按服务器给的（服务器已经让默认模型所在的系列在前、定位高的在前）。
+ * 只有一个系列时不分组。
+ */
+internal fun deepModelGroups(models: List<DeepModelOption>): List<Pair<String?, List<DeepModelOption>>> {
+    val groups = models.groupBy { deepSeriesLabel(it.id) }.toList()
+    return if (groups.size <= 1) listOf(null to models) else groups
+}
+
+/**
+ * 选模型和推理等级：上面是模型（名字和一句话说明，按 GPT、Claude 等系列分组），下面是推理等级。选了立即生效（从下一条消息起），
+ * 换模型时如果原来的推理等级新模型不支持，换成后台给这个模型设的默认档（没有就取中间一档）。模型多时整页可以滚动。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -447,29 +491,38 @@ fun DeepChoiceSheet(
     val c = Tg.colors
     val current = models.firstOrNull { it.id == choice.model }
     com.example.personal_studio.ui.components.TgBottomSheet(onDismiss = onDismiss, header = "模型与推理等级") {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
-            models.forEach { m ->
-                val selected = m.id == choice.model
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .clickable(role = Role.RadioButton) {
-                            val effort = choice.effort?.takeIf { it in m.efforts }
-                                ?: m.efforts.getOrNull(m.efforts.size / 2)
-                            onSelect(DeepChoice(m.id, effort))
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            deepModelGroups(models).forEachIndexed { index, (series, group) ->
+                if (series != null) {
+                    Text(
+                        series, style = MaterialTheme.typography.labelLarge, color = c.textSecondary,
+                        modifier = Modifier.padding(start = 8.dp, top = if (index == 0) 0.dp else 16.dp, bottom = 4.dp),
+                    )
+                }
+                group.forEach { m ->
+                    val selected = m.id == choice.model
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable(role = Role.RadioButton) {
+                                val effort = choice.effort?.takeIf { it in m.efforts }
+                                    ?: m.defaultEffort?.takeIf { it in m.efforts }
+                                    ?: m.efforts.getOrNull(m.efforts.size / 2)
+                                onSelect(DeepChoice(m.id, effort))
+                            }
+                            .padding(horizontal = 8.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(m.name, style = MaterialTheme.typography.bodyLarge, color = c.text)
+                            if (m.description.isNotBlank()) {
+                                Text(m.description, style = MaterialTheme.typography.bodySmall, color = c.textSecondary)
+                            }
                         }
-                        .padding(horizontal = 8.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(m.name, style = MaterialTheme.typography.bodyLarge, color = c.text)
-                        if (m.description.isNotBlank()) {
-                            Text(m.description, style = MaterialTheme.typography.bodySmall, color = c.textSecondary)
-                        }
+                        if (selected) Icon(Icons.Outlined.Check, contentDescription = "当前模型", tint = c.accent, modifier = Modifier.size(20.dp))
                     }
-                    if (selected) Icon(Icons.Outlined.Check, contentDescription = "当前模型", tint = c.accent, modifier = Modifier.size(20.dp))
                 }
             }
             val efforts = current?.efforts.orEmpty()

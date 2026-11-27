@@ -9,6 +9,7 @@ import com.example.personal_studio.data.deep.DeepQuestionField
 import com.example.personal_studio.data.deep.DeepQuestionOption
 import com.example.personal_studio.data.deep.DeepSendResult
 import com.example.personal_studio.data.deep.DeepStatus
+import com.example.personal_studio.data.deep.effectiveChoice
 import com.example.personal_studio.data.deep.DeepStep
 import com.example.personal_studio.data.deep.DeepStepKind
 import com.example.personal_studio.data.local.datastore.FakeUserPreferencesRepository
@@ -236,7 +237,43 @@ class DeepChatViewModelTest {
         assertEquals("GPT-6 Luna · 推理 高", com.example.personal_studio.feature.chat.ui.choiceLabel(models, DeepChoice("gpt-6-luna", "high")))
     }
 
+    @Test fun `provider ids, per-model default effort and choices saved by older versions`() {
+        val models = listOf(
+            DeepModelOption("anthropic/claude-opus-5-5", "Claude Opus 5.5", "", listOf("high", "max"), isDefault = true, defaultEffort = "max"),
+            DeepModelOption("openai/gpt-6.2-sol", "GPT-6.2 Sol", "均衡", listOf("low", "medium", "high"), isDefault = false, defaultEffort = "medium"),
+            DeepModelOption("anthropic/claude-plain", "Claude", "", emptyList(), isDefault = false),
+        )
+        val status = DeepStatus.Available("anthropic/claude-opus-5-5", models, "max")
+        assertEquals(DeepChoice("anthropic/claude-opus-5-5", "max"), status.effectiveChoice(null))
+        // 旧版本存的是不带提供方的 ID；选过的档位这个模型不开放时用它自己的默认档
+        assertEquals(DeepChoice("openai/gpt-6.2-sol", "medium"), status.effectiveChoice(DeepChoice("gpt-6.2-sol", "max")))
+        assertEquals(DeepChoice("openai/gpt-6.2-sol", "low"), status.effectiveChoice(DeepChoice("openai/gpt-6.2-sol", "low")))
+        assertEquals(DeepChoice("anthropic/claude-plain", null), status.effectiveChoice(DeepChoice("anthropic/claude-plain", "high")))
+        assertEquals("GPT-6.2 Sol · 推理 中", com.example.personal_studio.feature.chat.ui.choiceLabel(models, DeepChoice("gpt-6.2-sol", "medium")))
+        assertEquals("Claude", com.example.personal_studio.feature.chat.ui.choiceLabel(models, DeepChoice("anthropic/claude-plain", null)))
+    }
+
+    @Test fun `the picker groups models by series in server order, status says only that it works`() {
+        val opt = { id: String -> DeepModelOption(id, id, "", emptyList(), isDefault = false) }
+        val groups = com.example.personal_studio.feature.chat.ui.deepModelGroups(
+            listOf(opt("anthropic/claude-opus-5-5"), opt("anthropic/claude-haiku-5-5"), opt("openai/gpt-6.2-sol"), opt("openai/gpt-6-luna")),
+        )
+        assertEquals(listOf("Claude 系列", "GPT 系列"), groups.map { it.first })
+        assertEquals(listOf("anthropic/claude-opus-5-5", "anthropic/claude-haiku-5-5"), groups[0].second.map { it.id })
+        // 只有一个系列、或是旧服务器不带提供方的 ID：不分组
+        assertEquals(listOf<String?>(null), com.example.personal_studio.feature.chat.ui.deepModelGroups(listOf(opt("openai/gpt-6.2-sol"))).map { it.first })
+        assertEquals(listOf<String?>(null), com.example.personal_studio.feature.chat.ui.deepModelGroups(listOf(opt("gpt-6.2-sol"), opt("gpt-6-luna"))).map { it.first })
+        assertEquals("deepseek", com.example.personal_studio.feature.chat.ui.deepSeriesLabel("deepseek/v4"))
+        val status = DeepStatus.Available("openai/gpt-6.2-sol", listOf(opt("openai/gpt-6.2-sol").copy(isDefault = true)), "medium")
+        assertEquals("可以使用", com.example.personal_studio.feature.settings.vm.statusLine(status))
+    }
+
     @Test fun `labels, summaries and answers`() {
+        assertEquals("GPT-6.2 Sol", deepModelLabel("openai/gpt-6.2-sol"))
+        assertEquals("Claude Opus 5.5", deepModelLabel("anthropic/claude-opus-5-5"))
+        assertEquals("Claude Opus 5.5 Fast", deepModelLabel("anthropic/claude-opus-5-5-fast"))
+        assertEquals("Claude Haiku 4.5", deepModelLabel("anthropic/claude-haiku-4-5-20251001"))
+        assertEquals("some-model", deepModelLabel("other/some-model"))
         assertEquals("GPT-6.2 Sol", deepModelLabel("gpt-6.2-sol"))
         assertEquals("GPT-6.2 Astra Fast", deepModelLabel("gpt-6.2-astra-fast"))
         assertEquals("deepseek-flash", deepModelLabel("deepseek-flash"))

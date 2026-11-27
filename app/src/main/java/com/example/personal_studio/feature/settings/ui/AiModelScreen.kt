@@ -161,7 +161,7 @@ fun AiModelScreen(
                 TgSettingRow("状态", icon = Icons.Outlined.AutoAwesome, first = true, summary = deepUi.status)
                 TgSettingRow(
                     "隐私与安全", icon = Icons.Outlined.PrivacyTip,
-                    summary = "题目和图片发到课间服务器，由 OpenAI 的模型处理；最后一次使用 7 天后删除",
+                    summary = "题目和图片发到课间服务器，交给你选的模型处理；最后一次使用 7 天后删除",
                     onClick = { runCatching { uriHandler.openUri(KejianApi.PRIVACY_URL) } },
                 )
                 TgSettingRow(

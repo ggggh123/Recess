@@ -158,5 +158,6 @@ internal fun modelOptions(reply: JsonObject): List<DeepModelOption> =
             description = m.string("description").orEmpty(),
             efforts = (m["efforts"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull },
             isDefault = (m["default"] as? JsonPrimitive)?.booleanOrNull == true,
+            defaultEffort = m.string("defaultEffort"),
         )
     }

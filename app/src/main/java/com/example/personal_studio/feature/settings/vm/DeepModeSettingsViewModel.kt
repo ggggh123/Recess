@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class DeepModeSettingsUi(
-    /** 一句话状态：“可以使用 · GPT-6.2 Sol”“深度模式暂未开放” 等。 */
+    /** 一句话状态：“可以使用”“深度模式暂未开放” 等。用哪个模型在对话里选，这里不写。 */
     val status: String = "正在查询…",
     val deleting: Boolean = false,
     /** 删除完成后的一次性提示。 */
@@ -53,6 +53,6 @@ class DeepModeSettingsViewModel @Inject constructor(
 
 internal fun statusLine(s: DeepStatus): String = when (s) {
     DeepStatus.Unknown -> "正在查询…"
-    is DeepStatus.Available -> com.example.personal_studio.feature.chat.ui.deepModelLabel(s.model)?.let { "可以使用 · $it" } ?: "可以使用"
+    is DeepStatus.Available -> "可以使用"
     is DeepStatus.Unavailable -> s.message
 }
