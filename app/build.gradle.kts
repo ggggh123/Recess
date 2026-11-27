@@ -46,8 +46,8 @@ android {
         applicationId = "com.example.personal_studio"
         minSdk = 30
         targetSdk = 35
-        versionCode = 121
-        versionName = "1.2.1"
+        versionCode = 130
+        versionName = "1.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
